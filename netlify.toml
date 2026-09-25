@@ -4,11 +4,3 @@
 
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "APIFY_TOKEN,APIFY_ACTOR_ID,USD_TO_BDT"
-
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
-
-[[headers]]
-  for = "/api/image"
-  [headers.values]
-    Cache-Control = "public, max-age=2592000, s-maxage=2592000, immutable"

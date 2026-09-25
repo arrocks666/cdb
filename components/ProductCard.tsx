@@ -6,12 +6,6 @@ import { Product, formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 
-function proxyImage(url: string | undefined | null): string {
-  if (!url) return "";
-  if (!url.startsWith("http")) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
 export default function ProductCard({ product }: { product: Product }) {
   const wishlist = useWishlist();
   const cart = useCart();
@@ -44,15 +38,7 @@ export default function ProductCard({ product }: { product: Product }) {
             : "bg-black/60 text-gold-primary hover:bg-red-primary hover:text-white"
         }`}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill={inWishlist ? "currentColor" : "none"}
-          stroke="currentColor"
-          strokeWidth="2"
-          style={{ pointerEvents: "none" }}
-        >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" style={{ pointerEvents: "none" }}>
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
         </svg>
       </div>
@@ -61,10 +47,9 @@ export default function ProductCard({ product }: { product: Product }) {
         <div className="relative aspect-square bg-gradient-to-br from-red-dark/15 to-bg-card-elevated flex items-center justify-center overflow-hidden">
           {showImage ? (
             <img
-              src={proxyImage(product.image)}
+              src={product.image}
               alt=""
-              width={200}
-              height={200}
+              referrerPolicy="no-referrer"
               className="h-full w-full object-contain p-2"
               onError={() => setImgFailed(true)}
             />

@@ -6,12 +6,6 @@ import { Product, formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 
-function proxyImage(url: string | undefined | null): string {
-  if (!url) return "";
-  if (!url.startsWith("http")) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
 export default function WishlistCard({ product }: { product: Product }) {
   const wishlist = useWishlist();
   const cart = useCart();
@@ -30,8 +24,9 @@ export default function WishlistCard({ product }: { product: Product }) {
         <div className="relative aspect-square bg-gradient-to-br from-red-dark/15 to-bg-card-elevated flex items-center justify-center overflow-hidden">
           {showImage ? (
             <img
-              src={proxyImage(product.image)}
+              src={product.image}
               alt=""
+              referrerPolicy="no-referrer"
               className="h-full w-full object-contain p-2"
               onError={() => setImgFailed(true)}
             />

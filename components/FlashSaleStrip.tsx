@@ -4,12 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { products, formatBDT } from "@/lib/data";
 
-function proxyImage(url: string | undefined | null): string {
-  if (!url) return "";
-  if (!url.startsWith("http")) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
 export default function FlashSaleStrip() {
   const [time, setTime] = useState({ h: 2, m: 45, s: 30 });
 
@@ -29,14 +23,13 @@ export default function FlashSaleStrip() {
 
   const pad = (n: number) => n.toString().padStart(2, "0");
 
-  // Pick 4 highest-rated products for flash sale
   const flashProducts = [...products]
     .sort((a, b) => b.rating - a.rating)
     .slice(0, 4);
 
   return (
     <section className="px-3 py-3 md:px-4 md:py-6">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[1800px]">
         <div className="overflow-hidden rounded-2xl border border-red-dark/50 shadow-card-dark">
           <div
             className="relative flex items-center justify-between px-3 py-2.5 md:px-5 md:py-3.5"
@@ -68,7 +61,7 @@ export default function FlashSaleStrip() {
             </div>
 
             <Link
-              href="/flash-sale"
+              href="/search"
               className="flex items-center gap-0.5 text-[10px] font-semibold text-white transition hover:text-gold-light md:text-xs"
             >
               See All
@@ -82,7 +75,7 @@ export default function FlashSaleStrip() {
           <div className="bg-bg-card p-2.5 md:p-4">
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-4">
               {flashProducts.map((p) => (
-                <FlashProduct key={p.id} product={p} />
+                <FlashProduct key={`${p.id}-${p.image}`} product={p} />
               ))}
             </div>
           </div>
@@ -104,10 +97,9 @@ function FlashProduct({ product }: { product: any }) {
       <div className="relative aspect-square bg-gradient-to-br from-red-dark/20 to-bg-card flex items-center justify-center overflow-hidden">
         {showImage ? (
           <img
-            src={proxyImage(product.image)}
+            src={product.image}
             alt=""
-            width={200}
-            height={200}
+            referrerPolicy="no-referrer"
             className="h-full w-full object-contain p-2"
             onError={() => setImgFailed(true)}
           />

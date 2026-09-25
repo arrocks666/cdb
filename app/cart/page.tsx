@@ -6,12 +6,6 @@ import { useRouter } from "next/navigation";
 import { products, formatBDT } from "@/lib/data";
 import { useCart } from "@/lib/CartContext";
 
-function proxyImage(url: string | undefined | null): string {
-  if (!url) return "";
-  if (!url.startsWith("http")) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
 export default function CartPage() {
   const router = useRouter();
   const cart = useCart();
@@ -92,8 +86,10 @@ export default function CartPage() {
     <div className="pb-44">
       <TopBar count={cartRows.length} onClear={() => cart.clear()} />
 
-      {/* Select All row */}
-      <div className="sticky top-[96px] z-30 flex items-center gap-2 border-b border-border-subtle px-4 py-2.5 shadow-sm md:top-[56px]" style={{ backgroundColor: "#080808" }}>
+      <div
+        className="sticky top-[96px] z-30 flex items-center gap-2 border-b border-border-subtle px-4 py-2.5 shadow-sm md:top-[56px]"
+        style={{ backgroundColor: "#080808" }}
+      >
         <button
           onClick={toggleAll}
           className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
@@ -108,15 +104,12 @@ export default function CartPage() {
             </svg>
           )}
         </button>
-        <span className="text-xs font-medium text-text-secondary">
-          Select All
-        </span>
+        <span className="text-xs font-medium text-text-secondary">Select All</span>
         <span className="ml-auto text-[11px] text-text-muted">
           {selectedRows.length} of {cartRows.length} selected
         </span>
       </div>
 
-      {/* Cart items */}
       <div className="mx-auto max-w-[1800px] px-3 py-3 md:px-4 md:py-4">
         <div className="space-y-3">
           {cartRows.map((row) => (
@@ -124,7 +117,6 @@ export default function CartPage() {
               key={row.key}
               className="rounded-xl border border-gold-primary/40 bg-bg-card p-3 shadow-card-dark"
             >
-              {/* Row 1: checkbox + image + info */}
               <div className="flex items-start gap-3">
                 <button
                   onClick={() => toggleSelected(row.key)}
@@ -145,18 +137,7 @@ export default function CartPage() {
                   href={`/product/${row.product.id}`}
                   className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gold-primary/40 bg-bg-card-elevated"
                 >
-                  {row.product.image ? (
-                    <img
-                      src={proxyImage(row.product.image)}
-                      alt=""
-                      className="h-full w-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <span className="text-3xl">📦</span>
-                  )}
+                  <CartImage src={row.product.image} />
                 </Link>
 
                 <div className="min-w-0 flex-1">
@@ -178,7 +159,6 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* Row 2: quantity + delete */}
               <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
                 <div className="inline-flex items-center rounded-full border border-gold-primary/50 bg-bg-card-elevated">
                   <button
@@ -214,7 +194,6 @@ export default function CartPage() {
         </div>
       </div>
 
-      {/* Sticky bottom summary */}
       <div
         className="fixed bottom-[60px] left-0 right-0 z-40 border-t border-gold-primary/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)] md:bottom-0"
         style={{ backgroundColor: "#080808" }}
@@ -230,12 +209,8 @@ export default function CartPage() {
               <span className="text-text-primary">{formatBDT(shipping)}</span>
             </div>
             <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
-              <span className="text-sm font-semibold text-text-primary md:text-base">
-                Total
-              </span>
-              <span className="text-lg font-bold text-red-primary md:text-xl">
-                {formatBDT(total)}
-              </span>
+              <span className="text-sm font-semibold text-text-primary md:text-base">Total</span>
+              <span className="text-lg font-bold text-red-primary md:text-xl">{formatBDT(total)}</span>
             </div>
           </div>
 
@@ -249,6 +224,20 @@ export default function CartPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function CartImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span className="text-3xl">📦</span>;
+  return (
+    <img
+      src={src}
+      alt=""
+      referrerPolicy="no-referrer"
+      className="h-full w-full object-contain p-1"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
