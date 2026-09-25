@@ -33,28 +33,20 @@ export type Product = {
 function dedupe(rawProducts: Product[]): Product[] {
   const seenIds = new Set<string>();
   const seenImages = new Set<string>();
-  // Count how many times each image appears
-  const imageCount = new Map<string, number>();
-  for (const p of rawProducts) {
-    if (p.image) {
-      imageCount.set(p.image, (imageCount.get(p.image) || 0) + 1);
-    }
-  }
-
-  // Images used by more than 3 products are likely placeholders — skip them
-  const placeholderImages = new Set<string>();
-  imageCount.forEach((count, img) => {
-    if (count > 3) placeholderImages.add(img);
-  });
-
   const unique: Product[] = [];
+
   for (const p of rawProducts) {
+    // Skip if we already saw this product ID
     if (seenIds.has(p.id)) continue;
-    if (p.image && seenImages.has(p.image)) continue;
-    // Skip products whose image is a known placeholder
-    if (p.image && placeholderImages.has(p.image)) continue;
+
+    // Skip if the image is empty or invalid
+    if (!p.image || !p.image.startsWith("http")) continue;
+
+    // Skip if we already used this exact image
+    if (seenImages.has(p.image)) continue;
+
     seenIds.add(p.id);
-    if (p.image) seenImages.add(p.image);
+    seenImages.add(p.image);
     unique.push(p);
   }
 

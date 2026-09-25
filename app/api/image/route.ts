@@ -25,7 +25,6 @@ export async function GET(request: NextRequest) {
         "Accept-Language": "en-US,en;q=0.9",
         Referer: "https://www.alibaba.com/",
       },
-      // Cache at fetch level too
       next: { revalidate: 86400 },
     });
 
@@ -40,7 +39,6 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        // Cache for 30 days on Netlify's CDN + browser
         "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
         "CDN-Cache-Control": "public, max-age=2592000",
         "Access-Control-Allow-Origin": "*",
