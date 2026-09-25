@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
         "Accept-Language": "en-US,en;q=0.9",
         Referer: "https://www.alibaba.com/",
       },
+      // Cache at fetch level too
+      next: { revalidate: 86400 },
     });
 
     if (!upstream.ok) {
@@ -38,7 +40,9 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "public, max-age=86400, immutable",
+        // Cache for 30 days on Netlify's CDN + browser
+        "Cache-Control": "public, max-age=2592000, s-maxage=2592000, immutable",
+        "CDN-Cache-Control": "public, max-age=2592000",
         "Access-Control-Allow-Origin": "*",
       },
     });
