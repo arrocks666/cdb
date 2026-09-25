@@ -36,13 +36,9 @@ function dedupe(rawProducts: Product[]): Product[] {
   const unique: Product[] = [];
 
   for (const p of rawProducts) {
-    // Skip if we already saw this product ID
     if (seenIds.has(p.id)) continue;
-
-    // Skip if the image is empty or invalid
     if (!p.image || !p.image.startsWith("http")) continue;
-
-    // Skip if we already used this exact image
+    // Super-aggressive: any image used before is rejected
     if (seenImages.has(p.image)) continue;
 
     seenIds.add(p.id);
