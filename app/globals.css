@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+/* ============================================
+   CHINADAILYBAZAR — DESIGN SYSTEM
+   Black + Gold + Red + Warm Cream
+   ============================================ */
+
+@theme {
+  /* BACKGROUNDS */
+  --color-bg-base: #080808;
+  --color-bg-secondary: #0D0D0D;
+  --color-bg-card: #151515;
+  --color-bg-card-elevated: #1B1A18;
+  --color-bg-input: #171614;
+  --color-bg-nav: #0B0B0B;
+
+  /* BORDERS */
+  --color-border-gold: #3A3024;
+  --color-border-subtle: #27231E;
+  --color-border-gold-bright: #5A4A30;
+
+  /* GOLD SYSTEM */
+  --color-gold-primary: #D6A84A;
+  --color-gold-luxury: #E8C77A;
+  --color-gold-light: #F2D99A;
+  --color-gold-muted: #9D7835;
+  --color-gold-highlight: #C99A42;
+
+  /* RED SYSTEM */
+  --color-red-primary: #E31B16;
+  --color-red-bright: #F22B22;
+  --color-red-dark: #8E1715;
+  --color-red-glow: #B51F1A;
+
+  /* TEXT */
+  --color-text-primary: #F5F1E8;
+  --color-text-secondary: #B7B0A3;
+  --color-text-muted: #777168;
+  --color-text-disabled: #514C45;
+
+  /* STATUS */
+  --color-success: #4CAF72;
+  --color-warning: #D6A84A;
+
+  /* FONTS */
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-playfair), Georgia, serif;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+html {
+  background: #080808;
+  color-scheme: dark;
+}
+
+body {
+  background: #080808;
+  color: #F5F1E8;
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0D0D0D;
+}
+::-webkit-scrollbar-thumb {
+  background: #3A3024;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D6A84A;
+}
+
+/* ============================================
+   SELECTION
+   ============================================ */
+
+::selection {
+  background: #E31B16;
+  color: #FFFFFF;
+}
+
+/* ============================================
+   SHADOW UTILITIES
+   ============================================ */
+
+.shadow-red-glow {
+  box-shadow: 0 4px 20px -4px rgba(227, 27, 22, 0.55);
+}
+.shadow-gold-soft {
+  box-shadow: 0 4px 24px -8px rgba(214, 168, 74, 0.25);
+}
+.shadow-card-dark {
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.02) inset,
+    0 4px 12px -4px rgba(0, 0, 0, 0.6);
+}
+.shadow-nav {
+  box-shadow: 0 -4px 24px -8px rgba(0, 0, 0, 0.8);
+}
+
+/* ============================================
+   TEXT SHADOW UTILITIES
+   ============================================ */
+
+.text-shadow-gold {
+  text-shadow: 0 0 24px rgba(214, 168, 74, 0.35);
+}
+.text-shadow-red {
+  text-shadow: 0 0 20px rgba(227, 27, 22, 0.45);
+}
+
+/* ============================================
+   GOLD GRADIENT TEXT
+   ============================================ */
+
+.gold-text {
+  background: linear-gradient(135deg, #D6A84A 0%, #F2D99A 50%, #D6A84A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+.gold-text-bright {
+  background: linear-gradient(135deg, #E8C77A 0%, #F2D99A 50%, #E8C77A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ============================================
+   GOLD BORDERS (gradient border trick)
+   ============================================ */
+
+.border-gold-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#151515, #151515) padding-box,
+    linear-gradient(135deg, #D6A84A 0%, #9D7835 50%, #D6A84A 100%) border-box;
+}
+
+.border-gold-gradient-thin {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#151515, #151515) padding-box,
+    linear-gradient(
+        135deg,
+        rgba(214, 168, 74, 0.6) 0%,
+        rgba(157, 120, 53, 0.3) 50%,
+        rgba(214, 168, 74, 0.6) 100%
+      )
+      border-box;
+}
+
+/* ============================================
+   UTILITY
+   ============================================ */
+
+.gold-gradient {
+  background: linear-gradient(135deg, #D6A84A 0%, #E8C77A 50%, #D6A84A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

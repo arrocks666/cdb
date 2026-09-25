@@ -1,0 +1,255 @@
+export type ColorOption = {
+  id: string;
+  label: string;
+  hex: string;
+};
+
+export type Product = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  price: number;
+  oldPrice: number;
+  discount: number;
+  rating: number;
+  reviews: number;
+  image: string;
+  gallery: string[];
+  colors: ColorOption[];
+  inStock: boolean;
+  stockCount: number;
+  features: { icon: string; label: string }[];
+  description: string;
+};
+
+const defaultColors: ColorOption[] = [
+  { id: "black", label: "Black", hex: "#000000" },
+  { id: "white", label: "White", hex: "#E8E8E8" },
+  { id: "red", label: "Red", hex: "#E31B16" },
+  { id: "blue", label: "Blue", hex: "#4A6FD6" },
+];
+
+const watchColors: ColorOption[] = [
+  { id: "black", label: "Black", hex: "#000000" },
+  { id: "silver", label: "Silver", hex: "#C0C0C0" },
+  { id: "rose", label: "Rose Gold", hex: "#E0BFB8" },
+  { id: "blue", label: "Blue", hex: "#2C4A8A" },
+];
+
+export const products: Product[] = [
+  {
+    id: "1",
+    title: "Smart Watch Ultra",
+    subtitle: "Heart Rate, BT Call",
+    price: 1850,
+    oldPrice: 2790,
+    discount: 32,
+    rating: 4.8,
+    reviews: 1248,
+    image: "⌚",
+    gallery: ["⌚", "⌚", "🎧", "🎵"],
+    colors: watchColors,
+    inStock: true,
+    stockCount: 24,
+    features: [
+      { icon: "❤️", label: "Heart Rate" },
+      { icon: "📞", label: "BT Calling" },
+      { icon: "💧", label: "Waterproof" },
+      { icon: "🔋", label: "Long Battery" },
+    ],
+    description:
+      "Premium smartwatch with a 1.96\" HD AMOLED display, Bluetooth 5.3, 7-day battery life, and IP68 waterproof rating. Perfect for fitness tracking, calls, and everyday wear.",
+  },
+  {
+    id: "2",
+    title: "TWS Bluetooth Earbuds",
+    subtitle: "Noise Cancelling",
+    price: 950,
+    oldPrice: 1450,
+    discount: 35,
+    rating: 4.6,
+    reviews: 856,
+    image: "🎧",
+    gallery: ["🎧", "🎧", "🎵", "🔋"],
+    colors: [
+      { id: "white", label: "White", hex: "#E8E8E8" },
+      { id: "black", label: "Black", hex: "#000000" },
+    ],
+    inStock: true,
+    stockCount: 42,
+    features: [
+      { icon: "🔊", label: "ANC" },
+      { icon: "🔋", label: "30h Battery" },
+      { icon: "💧", label: "Sweat Proof" },
+    ],
+    description:
+      "True wireless earbuds with active noise cancellation, 30-hour total battery life, and crystal-clear call quality.",
+  },
+  {
+    id: "3",
+    title: "Travel Backpack",
+    subtitle: "Black, Large",
+    price: 1250,
+    oldPrice: 1850,
+    discount: 32,
+    rating: 4.7,
+    reviews: 429,
+    image: "🎒",
+    gallery: ["🎒", "🎒", "👝", "🧳"],
+    colors: [
+      { id: "black", label: "Black", hex: "#000000" },
+      { id: "grey", label: "Grey", hex: "#5A5A5A" },
+      { id: "navy", label: "Navy", hex: "#1C2951" },
+    ],
+    inStock: true,
+    stockCount: 15,
+    features: [
+      { icon: "💧", label: "Water Resistant" },
+      { icon: "💻", label: "Laptop Sleeve" },
+      { icon: "🔒", label: "Anti-Theft" },
+    ],
+    description:
+      "Durable travel backpack with 40L capacity, USB charging port, water-resistant fabric, and a padded laptop sleeve up to 17\".",
+  },
+  {
+    id: "4",
+    title: "LED Table Lamp",
+    subtitle: "Rechargeable",
+    price: 650,
+    oldPrice: 950,
+    discount: 32,
+    rating: 4.5,
+    reviews: 327,
+    image: "💡",
+    gallery: ["💡", "💡", "🔆", "🕯️"],
+    colors: [
+      { id: "white", label: "White", hex: "#E8E8E8" },
+      { id: "warm", label: "Warm Yellow", hex: "#F2D99A" },
+    ],
+    inStock: false,
+    stockCount: 0,
+    features: [
+      { icon: "🔋", label: "USB-C" },
+      { icon: "🌗", label: "3 Modes" },
+      { icon: "👆", label: "Touch Control" },
+    ],
+    description:
+      "Foldable LED desk lamp with 3 brightness modes, USB-C rechargeable battery, and touch control. Perfect for study and bedside.",
+  },
+  {
+    id: "5",
+    title: "Sports Sneakers",
+    subtitle: "Black / White",
+    price: 1480,
+    oldPrice: 2100,
+    discount: 30,
+    rating: 4.6,
+    reviews: 512,
+    image: "👟",
+    gallery: ["👟", "👟", "🏃", "⚡"],
+    colors: [
+      { id: "black", label: "Black", hex: "#000000" },
+      { id: "white", label: "White", hex: "#E8E8E8" },
+      { id: "red", label: "Red", hex: "#E31B16" },
+    ],
+    inStock: true,
+    stockCount: 8,
+    features: [
+      { icon: "🏃", label: "Lightweight" },
+      { icon: "💨", label: "Breathable" },
+      { icon: "🛡️", label: "Anti-Slip" },
+    ],
+    description:
+      "Ultra-light running sneakers with breathable mesh upper, anti-slip rubber sole, and cushioned insole for all-day comfort.",
+  },
+  {
+    id: "6",
+    title: "Wireless Headphones",
+    subtitle: "Over Ear, Black",
+    price: 1690,
+    oldPrice: 2450,
+    discount: 31,
+    rating: 4.7,
+    reviews: 743,
+    image: "🎧",
+    gallery: ["🎧", "🎧", "🎵", "🔊"],
+    colors: [
+      { id: "black", label: "Black", hex: "#000000" },
+      { id: "silver", label: "Silver", hex: "#C0C0C0" },
+    ],
+    inStock: true,
+    stockCount: 19,
+    features: [
+      { icon: "🔊", label: "Hi-Fi" },
+      { icon: "🔋", label: "40h Battery" },
+      { icon: "🎙️", label: "Mic" },
+    ],
+    description:
+      "Over-ear wireless headphones with Hi-Fi sound, 40-hour battery, built-in mic, and foldable design for travel.",
+  },
+  {
+    id: "7",
+    title: "Portable Blender",
+    subtitle: "USB Rechargeable",
+    price: 890,
+    oldPrice: 1290,
+    discount: 31,
+    rating: 4.4,
+    reviews: 218,
+    image: "🥤",
+    gallery: ["🥤", "🥤", "🍓", "🍌"],
+    colors: [
+      { id: "white", label: "White", hex: "#E8E8E8" },
+      { id: "pink", label: "Pink", hex: "#E8A4B8" },
+    ],
+    inStock: true,
+    stockCount: 30,
+    features: [
+      { icon: "⚡", label: "Fast Blend" },
+      { icon: "🔋", label: "USB-C" },
+      { icon: "💧", label: "Easy Clean" },
+    ],
+    description:
+      "Portable USB rechargeable blender for smoothies and shakes. 400ml capacity, stainless steel blades, easy-clean design.",
+  },
+  {
+    id: "8",
+    title: "Mini Projector",
+    subtitle: "HD 1080p",
+    price: 3450,
+    oldPrice: 4900,
+    discount: 30,
+    rating: 4.5,
+    reviews: 189,
+    image: "📽️",
+    gallery: ["📽️", "📽️", "🎬", "📺"],
+    colors: [
+      { id: "white", label: "White", hex: "#E8E8E8" },
+      { id: "black", label: "Black", hex: "#000000" },
+    ],
+    inStock: true,
+    stockCount: 6,
+    features: [
+      { icon: "📺", label: "1080p HD" },
+      { icon: "🔊", label: "Built-in Speaker" },
+      { icon: "📱", label: "HDMI + WiFi" },
+    ],
+    description:
+      "Mini HD projector with 1080p support, built-in speaker, HDMI and WiFi connectivity. Perfect for movies, gaming, and presentations.",
+  },
+];
+
+export const categories = [
+  { id: "electronics", name: "Electronics", icon: "📱" },
+  { id: "fashion", name: "Fashion", icon: "👕" },
+  { id: "home", name: "Home & Living", icon: "🏠" },
+  { id: "beauty", name: "Beauty", icon: "💄" },
+  { id: "shoes", name: "Shoes", icon: "👟" },
+  { id: "bags", name: "Bags", icon: "👜" },
+  { id: "jewelry", name: "Jewelry", icon: "💍" },
+  { id: "more", name: "More", icon: "⋯" },
+];
+
+export function formatBDT(amount: number): string {
+  return `৳${amount.toLocaleString("en-IN")}`;
+}
