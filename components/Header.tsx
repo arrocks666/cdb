@@ -3,13 +3,15 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
-import { products, formatBDT } from "@/lib/data";
+import { formatBDT } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
 import ImageSearchModal from "./ImageSearchModal";
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const cart = useCart();
+  const { products } = useProducts();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
@@ -28,7 +30,7 @@ export default function Header() {
           (p.subtitle && p.subtitle.toLowerCase().includes(q))
       )
       .slice(0, 5);
-  }, [query]);
+  }, [query, products]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {

@@ -3,7 +3,8 @@
 import { useState, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { products, formatBDT } from "@/lib/data";
+import { formatBDT } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
 import { useCart } from "@/lib/CartContext";
 import { useOrders } from "@/lib/OrderContext";
 import { useAuth } from "@/lib/AuthContext";
@@ -29,6 +30,7 @@ type CheckoutRow = {
   price: number;
   title: string;
   image: string;
+  isLive: boolean;
 };
 
 function CheckoutContent() {
@@ -37,11 +39,13 @@ function CheckoutContent() {
   const cart = useCart();
   const orders = useOrders();
   const { user } = useAuth();
+  const { products } = useProducts();
 
   const [step, setStep] = useState(1);
   const [payment, setPayment] = useState("cod");
   const [placing, setPlacing] = useState(false);
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [address, setAddress] = useState({
     name: "",
@@ -71,11 +75,12 @@ function CheckoutContent() {
           price: item.liveSnapshot.price,
           title: item.liveSnapshot.title,
           image: item.liveSnapshot.image,
+          isLive: true,
         });
         continue;
       }
 
-      // Local product — look up in products.json
+      // Stored product — look up in Firestore-backed products
       const product = products.find((p) => p.id === item.productId);
       if (!product) continue;
 
@@ -86,17 +91,19 @@ function CheckoutContent() {
         price: product.price,
         title: product.title,
         image: product.image,
+        isLive: false,
       });
     }
 
     return result;
-  }, [cart.items, selectedKeys.join(",")]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.items, selectedKeys.join(","), products]);
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
   const shipping = rows.length > 0 ? 200 : 0;
   const total = subtotal + shipping;
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!user) {
       setLoginPromptOpen(true);
       return;
@@ -104,25 +111,33 @@ function CheckoutContent() {
 
     if (rows.length === 0) return;
     setPlacing(true);
+    setError(null);
 
-    const newOrder = orders.addOrder({
-      items: rows.map((r) => ({
-        productId: r.productId,
-        colorId: r.colorId,
-        quantity: r.quantity,
-        price: r.price,
-      })),
-      subtotal,
-      shipping,
-      total,
-      paymentMethod: PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
-      address,
-    });
+    try {
+      const newOrder = await orders.addOrder({
+        items: rows.map((r) => ({
+          productId: r.productId,
+          colorId: r.colorId,
+          quantity: r.quantity,
+          price: r.price,
+          title: r.title,
+          image: r.image,
+          isLive: r.isLive,
+        })),
+        subtotal,
+        shipping,
+        total,
+        paymentMethod: PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
+        address,
+      });
 
-    rows.forEach((r) => cart.remove(r.productId, r.colorId));
-    setTimeout(() => {
+      rows.forEach((r) => cart.remove(r.productId, r.colorId));
       router.push(`/orders/${newOrder.id}`);
-    }, 400);
+    } catch (err: any) {
+      console.error("Order error:", err);
+      setError(err?.message ?? "Failed to place order. Please try again.");
+      setPlacing(false);
+    }
   };
 
   if (rows.length === 0 && !placing) {
@@ -238,6 +253,12 @@ function CheckoutContent() {
                   </div>
                 </div>
               </div>
+
+              {error && (
+                <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">
+                  {error}
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <button onClick={() => setStep(2)} disabled={placing} className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary disabled:opacity-40">Back</button>

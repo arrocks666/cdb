@@ -148,4 +148,44 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               </div>
             </div>
 
-            {addedFeedback && <div className
+            {addedFeedback && (
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-xs text-success">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                Added to cart!
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button onClick={handleAddToCart} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gold-primary bg-white py-3 text-sm font-semibold text-gold-primary transition hover:bg-bg-orange">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="9" cy="21" r="1" />
+                  <circle cx="20" cy="21" r="1" />
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                </svg>
+                Add to Cart
+              </button>
+              <button onClick={handleBuyNow} className="flex flex-1 items-center justify-center rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury">
+                Buy Now
+              </button>
+            </div>
+
+            <button onClick={handleWhatsApp} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-success bg-white py-3 text-sm font-semibold text-success transition hover:bg-success/5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                <path d="M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.334.101 11.893c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.993 11.993 0 0 0 5.71 1.448h.005c6.585 0 11.946-5.336 11.949-11.896 0-3.176-1.24-6.165-3.495-8.411zm-8.475 18.29h-.004a9.955 9.955 0 0 1-5.076-1.39l-.364-.216-3.76.98 1.005-3.663-.238-.376a9.945 9.945 0 0 1-1.52-5.307c.002-5.518 4.494-9.996 10.02-9.996 2.675 0 5.187 1.043 7.078 2.935a9.923 9.923 0 0 1 2.933 7.075c-.003 5.52-4.495 9.998-10.074 9.998z"/>
+              </svg>
+              Order via WhatsApp
+            </button>
+
+            {product.description && (
+              <div className="mt-6 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">Description</h2>
+                <p className="text-xs leading-relaxed text-text-secondary md:text-sm">{product.description}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

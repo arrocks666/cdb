@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { products } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
 import ProductCard from "@/components/ProductCard";
 import LiveProductCard from "@/components/LiveProductCard";
 import { LiveProduct } from "@/lib/live-search";
@@ -42,6 +42,8 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
   const isImageSearch = searchParams.get("image") === "true";
+
+  const { products } = useProducts();
 
   const [query, setQuery] = useState(urlQuery);
   const [submittedQuery, setSubmittedQuery] = useState(urlQuery);
@@ -82,7 +84,7 @@ function SearchContent() {
         p.title.toLowerCase().includes(q) ||
         (p.subtitle && p.subtitle.toLowerCase().includes(q))
     );
-  }, [submittedQuery]);
+  }, [submittedQuery, products]);
 
   // Live search on submit (skip if this is image search)
   useEffect(() => {

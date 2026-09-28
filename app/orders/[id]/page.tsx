@@ -1,10 +1,12 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useOrders, STATUS_ORDER, STATUS_LABELS, OrderStatus } from "@/lib/OrderContext";
-import { products, formatBDT } from "@/lib/data";
+import { useOrders, STATUS_ORDER, STATUS_LABELS, OrderStatus, Order } from "@/lib/OrderContext";
+import { useProducts } from "@/lib/ProductsContext";
+import { formatBDT } from "@/lib/data";
+import { getOrder as getOrderFromFirestore } from "@/lib/firestoreOrders";
 
 function OrderImage({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
@@ -16,7 +18,39 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const router = useRouter();
   const orders = useOrders();
-  const order = orders.getOrder(id);
+  const { products } = useProducts();
+
+  // Try local cache first, then fall back to Firestore fetch
+  const cachedOrder = orders.getOrder(id);
+  const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
+  const [fetching, setFetching] = useState(false);
+
+  useEffect(() => {
+    if (cachedOrder) return;
+    let cancelled = false;
+    setFetching(true);
+    getOrderFromFirestore(id)
+      .then((o) => {
+        if (!cancelled && o) setFetchedOrder(o as Order);
+      })
+      .finally(() => {
+        if (!cancelled) setFetching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, cachedOrder]);
+
+  const order = cachedOrder ?? fetchedOrder;
+
+  if (fetching && !order) {
+    return (
+      <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   if (!order) {
     return (
@@ -104,14 +138,15 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <div className="space-y-3">
             {order.items.map((item, i) => {
               const product = products.find((p) => p.id === item.productId);
-              if (!product) return null;
+              const title = item.title ?? product?.title ?? "Product";
+              const image = item.image ?? product?.image ?? "";
               return (
                 <div key={i} className="flex items-center gap-3 border-b border-border-subtle pb-3 last:border-b-0 last:pb-0">
                   <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
-                    <OrderImage src={product.image} />
+                    <OrderImage src={image} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-text-primary md:text-base">{product.title}</p>
+                    <p className="truncate text-sm font-semibold text-text-primary md:text-base">{title}</p>
                     <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">Qty {item.quantity}</p>
                   </div>
                   <span className="text-sm font-bold text-red-primary md:text-base">{formatBDT(item.price * item.quantity)}</span>

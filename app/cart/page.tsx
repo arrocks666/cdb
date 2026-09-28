@@ -3,12 +3,14 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { products, formatBDT } from "@/lib/data";
+import { formatBDT } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
 import { useCart } from "@/lib/CartContext";
 
 export default function CartPage() {
   const router = useRouter();
   const cart = useCart();
+  const { products } = useProducts();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const cartRows = useMemo(() => {
@@ -29,7 +31,7 @@ export default function CartPage() {
             isLive: true,
           };
         }
-        // Otherwise look up local product
+        // Otherwise look up product from Firestore-backed list
         const product = products.find((p) => p.id === item.productId);
         if (!product) return null;
         return {
@@ -57,7 +59,8 @@ export default function CartPage() {
       href: string;
       isLive: boolean;
     }>;
-  }, [cart.items]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.items, products]);
 
   const isSelected = (key: string) => selected[key] !== false;
   const toggleSelected = (key: string) =>

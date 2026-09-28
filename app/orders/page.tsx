@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOrders, STATUS_LABELS } from "@/lib/OrderContext";
-import { products, formatBDT } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
+import { formatBDT } from "@/lib/data";
 
 export default function OrdersPage() {
   const router = useRouter();
   const orders = useOrders();
+  const { products } = useProducts();
 
   return (
     <div className="min-h-screen bg-bg-secondary">
