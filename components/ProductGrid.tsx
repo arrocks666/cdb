@@ -1,8 +1,9 @@
-import { Product } from "@/lib/data";
+"use client";
+
+import { Product } from "@/lib/ProductsContext";
 import ProductCard from "./ProductCard";
 
 export default function ProductGrid({ products }: { products: Product[] }) {
-  // Dedupe by product ID AND by image URL
   const seenIds = new Set<string>();
   const seenImages = new Set<string>();
   const unique: Product[] = [];
@@ -16,7 +17,7 @@ export default function ProductGrid({ products }: { products: Product[] }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
       {unique.map((p) => (
         <ProductCard key={`${p.id}-${p.image}`} product={p} />
       ))}

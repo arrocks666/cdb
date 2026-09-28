@@ -1,55 +1,8 @@
 // lib/data.ts
-import productsData from "../data/products.json";
+// Only keeps utility functions now.
+// Products are loaded from Firestore via ProductsContext.
 
-export type ColorOption = {
-  id: string;
-  label: string;
-  hex: string;
-};
-
-export type Product = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  price: number;
-  oldPrice: number;
-  discount: number;
-  rating: number;
-  reviews: number;
-  image: string;
-  gallery: string[];
-  colors: ColorOption[];
-  inStock: boolean;
-  stockCount: number;
-  features: { icon: string; label: string }[];
-  description: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  sourceUrl?: string;
-  moq?: number;
-  supplierName?: string;
-};
-
-function dedupe(rawProducts: Product[]): Product[] {
-  const seenIds = new Set<string>();
-  const seenImages = new Set<string>();
-  const unique: Product[] = [];
-
-  for (const p of rawProducts) {
-    if (seenIds.has(p.id)) continue;
-    if (!p.image || !p.image.startsWith("http")) continue;
-    // Super-aggressive: any image used before is rejected
-    if (seenImages.has(p.image)) continue;
-
-    seenIds.add(p.id);
-    seenImages.add(p.image);
-    unique.push(p);
-  }
-
-  return unique;
-}
-
-export const products: Product[] = dedupe(productsData as Product[]);
+export type { Product } from "./ProductsContext";
 
 export const categories = [
   { id: "electronics", name: "Electronics", icon: "📱" },

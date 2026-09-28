@@ -1,21 +1,28 @@
-import { scrapeAlibaba, RawAlibabaProduct } from "../lib/apify";
+import { scrape1688, Raw1688Product } from "../lib/apify-1688";
 import { allSubcategories } from "../lib/categories";
 import * as fs from "fs";
 import * as path from "path";
 
-const USD_TO_BDT = 121;
-const PRODUCTS_PER_SUBCATEGORY = 14;
+const CNY_TO_BDT = 17.5;
+const PRODUCTS_PER_SUBCATEGORY = 11;
 
-// Return the URL unchanged — the proxy route will handle format conversion
-function forceJpeg(url: string | null | undefined): string {
-  if (!url) return "";
-  return url;
+async function translateToEnglish(text: string): Promise<string> {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    if (!res.ok) return text;
+    const data = await res.json();
+    const translated = data[0]?.map((item: any[]) => item[0]).join("") ?? text;
+    return translated;
+  } catch {
+    return text;
+  }
 }
 
-function markupMultiplier(usdPrice: number): number {
-  if (usdPrice < 10) return 1.25;
-  if (usdPrice < 50) return 1.20;
-  if (usdPrice < 150) return 1.15;
+function markupMultiplier(bdtPrice: number): number {
+  if (bdtPrice < 500) return 1.25;
+  if (bdtPrice < 2500) return 1.20;
+  if (bdtPrice < 7500) return 1.15;
   return 1.10;
 }
 
@@ -40,65 +47,65 @@ type SiteProduct = {
   sourceUrl: string;
   moq: number;
   supplierName: string;
+  priceOriginalCny: number;
 };
 
-function transformProduct(
-  raw: RawAlibabaProduct,
+async function transformProduct(
+  raw: Raw1688Product,
   categoryId: string,
   subcategoryId: string
-): SiteProduct | null {
-  if (!raw.price?.min || raw.price.min <= 0) return null;
-  if (raw.price.currency !== "USD") return null;
+): Promise<SiteProduct | null> {
+  if (!raw.price || raw.price <= 0) return null;
+  if (!raw.imageUrl || !raw.imageUrl.startsWith("http")) return null;
 
-  const usdPrice = raw.price.min;
-  const usdOldPrice = raw.price.max ?? raw.price.min;
+  const englishTitle = await translateToEnglish(raw.title);
+  const priceBDT = raw.price * CNY_TO_BDT;
+  const multiplier = markupMultiplier(priceBDT);
+  const finalPrice = Math.round(priceBDT * multiplier);
+  const oldPrice = Math.round(finalPrice * 1.25);
+  const moq = raw.minOrderQuantity ?? 1;
 
-  const multiplier = markupMultiplier(usdPrice);
-  const priceBDT = Math.round(usdPrice * multiplier * USD_TO_BDT);
-  const oldPriceBDT = Math.round(usdOldPrice * multiplier * USD_TO_BDT);
-
-  const discount =
-    usdOldPrice > usdPrice
-      ? Math.round(((usdOldPrice - usdPrice) / usdOldPrice) * 100)
-      : 0;
-
-  const moq = raw.order?.minOrderQuantity ?? 1;
+  let subtitle = "China";
+  if (raw.province && raw.province.trim()) {
+    const provinceEn = await translateToEnglish(raw.province);
+    subtitle = `${provinceEn} · China`;
+  }
 
   return {
-    id: raw.productId,
-    title: raw.title.slice(0, 80),
-    subtitle: raw.supplier?.name?.slice(0, 40) ?? undefined,
-    price: priceBDT,
-    oldPrice: oldPriceBDT > priceBDT ? oldPriceBDT : priceBDT,
-    discount,
-    rating: raw.ratings?.score ?? 4.5,
-    reviews: raw.ratings?.count ?? 0,
-    image: forceJpeg(raw.media.mainImage),
-    gallery: raw.media.images.slice(0, 6).map(forceJpeg),
+    id: raw.offerId,
+    title: englishTitle.slice(0, 80),
+    subtitle,
+    price: finalPrice,
+    oldPrice,
+    discount: 20,
+    rating: raw.compositeScore ?? 4.5,
+    reviews: raw.saleQuantity ?? 0,
+    image: raw.imageUrl,
+    gallery: [raw.imageUrl],
     colors: [{ id: "default", label: "Default", hex: "#000000" }],
     inStock: true,
     stockCount: 999,
     features: [
-      { icon: "🏭", label: raw.supplier?.country ?? "China" },
+      { icon: "🏭", label: raw.province || "China" },
       { icon: "📦", label: `MOQ ${moq}` },
-      { icon: "🚚", label: `${raw.order?.leadTimeDays ?? 7}d` },
+      { icon: "⭐", label: `${raw.verifiedYears} yrs` },
     ],
-    description: raw.title,
+    description: englishTitle,
     categoryId,
     subcategoryId,
     sourceUrl: raw.url,
     moq,
-    supplierName: raw.supplier?.name ?? "Unknown Supplier",
+    supplierName: raw.supplierName ?? "Unknown",
+    priceOriginalCny: raw.price,
   };
 }
 
 async function main() {
-  console.log("Starting Apify scrape for all 35 subcategories...\n");
+  console.log("Starting 1688 scrape...\n");
   console.log(`Products per subcategory: ${PRODUCTS_PER_SUBCATEGORY}\n`);
 
   const allProducts: SiteProduct[] = [];
   const seenIds = new Set<string>();
-  const seenImages = new Set<string>();
   let totalScraped = 0;
   const startTime = Date.now();
 
@@ -108,18 +115,15 @@ async function main() {
 
     try {
       console.log(`${label} — searching "${sub.keyword}"...`);
-      const raw = await scrapeAlibaba(sub.keyword, PRODUCTS_PER_SUBCATEGORY);
+      const raw = await scrape1688(sub.keyword, PRODUCTS_PER_SUBCATEGORY);
       totalScraped += raw.length;
 
       let added = 0;
       for (const r of raw) {
-        if (seenIds.has(r.productId)) continue;
-        // Also dedupe by main image URL
-        if (r.media?.mainImage && seenImages.has(r.media.mainImage)) continue;
-        const transformed = transformProduct(r, sub.categoryId, sub.id);
+        if (seenIds.has(r.offerId)) continue;
+        const transformed = await transformProduct(r, sub.categoryId, sub.id);
         if (!transformed) continue;
-        seenIds.add(r.productId);
-        if (r.media?.mainImage) seenImages.add(r.media.mainImage);
+        seenIds.add(r.offerId);
         allProducts.push(transformed);
         added++;
       }
@@ -133,7 +137,7 @@ async function main() {
   const outDir = path.join(process.cwd(), "data");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-  const outPath = path.join(outDir, "products.json");
+  const outPath = path.join(outDir, "products-1688.json");
   fs.writeFileSync(outPath, JSON.stringify(allProducts, null, 2));
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);

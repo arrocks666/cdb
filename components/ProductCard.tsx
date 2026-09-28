@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Product, formatBDT } from "@/lib/data";
+import { Product } from "@/lib/ProductsContext";
+import { formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 
@@ -15,14 +16,14 @@ export default function ProductCard({ product }: { product: Product }) {
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const defaultColorId = product.colors[0]?.id ?? "default";
+    const defaultColorId = product.colors?.[0]?.id ?? "default";
     cart.add(product.id, defaultColorId, 1);
   };
 
   const showImage = product.image && !imgFailed;
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-gold-primary/40 bg-bg-card shadow-card-dark transition duration-200 hover:-translate-y-0.5 hover:border-gold-primary hover:shadow-gold-soft">
+    <div className="group relative overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
       <div
         role="button"
         tabIndex={0}
@@ -32,10 +33,10 @@ export default function ProductCard({ product }: { product: Product }) {
           e.stopPropagation();
           wishlist.toggle(product.id);
         }}
-        className={`absolute right-2 top-2 z-20 flex h-8 w-8 cursor-pointer select-none items-center justify-center rounded-full backdrop-blur-sm transition ${
+        className={`absolute right-2 top-2 z-20 flex h-8 w-8 cursor-pointer select-none items-center justify-center rounded-full transition ${
           inWishlist
-            ? "bg-red-primary text-white shadow-red-glow"
-            : "bg-black/60 text-gold-primary hover:bg-red-primary hover:text-white"
+            ? "bg-red-primary text-white"
+            : "bg-white/90 text-text-muted hover:bg-red-primary hover:text-white"
         }`}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" style={{ pointerEvents: "none" }}>
@@ -44,7 +45,7 @@ export default function ProductCard({ product }: { product: Product }) {
       </div>
 
       <Link href={`/product/${product.id}`} className="block">
-        <div className="relative aspect-square bg-gradient-to-br from-red-dark/15 to-bg-card-elevated flex items-center justify-center overflow-hidden">
+        <div className="relative aspect-square flex items-center justify-center overflow-hidden rounded-md m-2" style={{ backgroundColor: "#F9F9F9" }}>
           {showImage ? (
             <img
               src={product.image}
@@ -59,14 +60,14 @@ export default function ProductCard({ product }: { product: Product }) {
             </div>
           )}
           {product.discount > 0 && (
-            <span className="absolute left-2 top-2 rounded bg-red-primary px-1.5 py-0.5 text-[10px] font-bold text-white shadow-red-glow">
+            <span className="absolute left-2 top-2 rounded bg-red-primary px-1.5 py-0.5 text-[10px] font-bold text-white">
               -{product.discount}%
             </span>
           )}
         </div>
 
         <div className="p-2.5 md:p-3">
-          <h3 className="text-[12px] font-semibold leading-tight text-text-primary line-clamp-2 min-h-[32px] md:text-[13px]">
+          <h3 className="text-[12px] font-medium leading-tight text-text-primary line-clamp-2 min-h-[32px] md:text-[13px]">
             {product.title}
           </h3>
           {product.subtitle && (
@@ -76,11 +77,11 @@ export default function ProductCard({ product }: { product: Product }) {
           )}
           <div className="mt-1 flex items-center gap-1 text-[10px] md:text-[11px]">
             <span className="text-gold-primary">★</span>
-            <span className="text-text-secondary">{product.rating.toFixed(1)}</span>
-            <span className="text-text-muted">({product.reviews})</span>
+            <span className="text-text-secondary">{(product.rating ?? 4.5).toFixed(1)}</span>
+            <span className="text-text-muted">({product.reviews ?? 0})</span>
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">
-            <span className="text-sm font-bold text-red-primary md:text-base">
+            <span className="text-base font-bold text-red-primary md:text-lg">
               {formatBDT(product.price)}
             </span>
             {product.oldPrice > product.price && (
@@ -96,7 +97,7 @@ export default function ProductCard({ product }: { product: Product }) {
         <button
           onClick={handleAddToCart}
           disabled={!product.inStock}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-gold-primary py-2 text-[11px] font-semibold text-gold-primary transition hover:border-red-primary hover:bg-red-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-40 md:text-[12px]"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gold-primary py-2 text-[11px] font-semibold text-white transition hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40 md:text-[12px]"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
             <circle cx="9" cy="21" r="1" />

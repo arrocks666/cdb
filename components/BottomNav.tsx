@@ -17,8 +17,8 @@ export default function BottomNav() {
   const cart = useCart();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border-subtle bg-bg-nav/95 shadow-nav backdrop-blur-md md:hidden">
-      <ul className="mx-auto flex max-w-7xl items-center justify-around">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border-subtle bg-white shadow-nav md:hidden">
+      <ul className="mx-auto flex max-w-[1800px] items-center justify-around">
         {items.map((item) => {
           const active = pathname === item.href;
           const badge = item.href === "/cart" ? cart.totalCount : 0;
@@ -27,11 +27,11 @@ export default function BottomNav() {
               <Link
                 href={item.href}
                 className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition ${
-                  active ? "text-red-primary" : "text-text-muted"
+                  active ? "text-gold-primary" : "text-text-muted"
                 }`}
               >
                 {active && (
-                  <span className="absolute -top-px left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full bg-gold-primary shadow-gold-soft" />
+                  <span className="absolute -top-px left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full bg-gold-primary" />
                 )}
                 <div className="relative">
                   {item.icon}
