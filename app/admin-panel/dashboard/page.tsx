@@ -1,11 +1,78 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Order } from "@/lib/OrderContext";
+import {
+  fetchOrdersSince,
+  computeStats,
+  countByStatus,
+  startOfDay,
+  startOfWeek,
+  startOfMonth,
+  groupByDay,
+  formatBDT,
+} from "@/lib/adminOrders";
 
 export default function AdminDashboardPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOrdersSince()
+      .then((list) => {
+        if (!cancelled) setOrders(list);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const todayOrders = orders.filter((o) => o.createdAt >= startOfDay());
+  const weekOrders = orders.filter((o) => o.createdAt >= startOfWeek());
+  const monthOrders = orders.filter((o) => o.createdAt >= startOfMonth());
+
+  const todayStats = computeStats(todayOrders);
+  const weekStats = computeStats(weekOrders);
+  const monthStats = computeStats(monthOrders);
+  const allStats = computeStats(orders);
+
+  const statusCounts = countByStatus(monthOrders);
+  const pendingOrders =
+    statusCounts.placed +
+    statusCounts.confirmed +
+    statusCounts.processing;
+
+  const dailyData = groupByDay(monthOrders);
+  const maxRevenue = Math.max(
+    1,
+    ...dailyData.map((d) => d.revenue)
+  );
+
+  // Fill missing days of current month so chart has full width
+  const today = new Date();
+  const daysInMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0
+  ).getDate();
+  const chartData: Array<{ day: number; revenue: number }> = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(d).padStart(2, "0")}`;
+    const match = dailyData.find((x) => x.date === key);
+    chartData.push({ day: d, revenue: match?.revenue ?? 0 });
+  }
+
   return (
     <div>
-      {/* Premium header */}
+      {/* Header */}
       <div className="mb-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -26,7 +93,7 @@ export default function AdminDashboardPage() {
               Today
             </p>
             <p className="text-sm font-semibold text-text-primary">
-              {new Date().toLocaleDateString("en-GB", {
+              {today.toLocaleDateString("en-GB", {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
@@ -40,29 +107,35 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <BigStat
           label="Today's Revenue"
-          value="৳0"
-          sub="0 orders"
+          value={formatBDT(todayStats.revenue)}
+          sub={`${todayStats.count} ${
+            todayStats.count === 1 ? "order" : "orders"
+          }`}
           icon="💰"
           accent="red"
         />
         <BigStat
           label="This Week"
-          value="৳0"
-          sub="0 orders"
+          value={formatBDT(weekStats.revenue)}
+          sub={`${weekStats.count} ${
+            weekStats.count === 1 ? "order" : "orders"
+          }`}
           icon="📅"
           accent="gold"
         />
         <BigStat
           label="This Month"
-          value="৳0"
-          sub="0 orders"
+          value={formatBDT(monthStats.revenue)}
+          sub={`${monthStats.count} ${
+            monthStats.count === 1 ? "order" : "orders"
+          }`}
           icon="📈"
           accent="red"
         />
         <BigStat
           label="Total Orders"
-          value="0"
-          sub="All time"
+          value={String(allStats.count)}
+          sub="Last 30 days"
           icon="🧾"
           accent="gold"
         />
@@ -70,10 +143,28 @@ export default function AdminDashboardPage() {
 
       {/* Second row — operations */}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SmallStat label="Products" value="0" icon="📦" />
-        <SmallStat label="Customers" value="0" icon="👥" />
-        <SmallStat label="Wishlist Saves" value="0" icon="♡" />
-        <SmallStat label="Pending Orders" value="0" icon="⏳" />
+        <SmallStat
+          label="Pending Orders"
+          value={String(pendingOrders)}
+          icon="⏳"
+        />
+        <SmallStat
+          label="Delivered"
+          value={String(statusCounts.delivered)}
+          icon="✅"
+        />
+        <SmallStat
+          label="Average Order"
+          value={formatBDT(monthStats.aov)}
+          icon="📊"
+        />
+        <SmallStat
+          label="Manual Orders"
+          value={String(
+            monthOrders.filter((o) => o.userId === "admin-manual").length
+          )}
+          icon="✍️"
+        />
       </div>
 
       {/* Quick actions */}
@@ -83,9 +174,9 @@ export default function AdminDashboardPage() {
         </h2>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <QuickAction
-            href="/admin-panel/products"
-            icon="📦"
-            label="Manage Products"
+            href="/admin-panel/orders/new"
+            icon="✍️"
+            label="Create Order"
           />
           <QuickAction
             href="/admin-panel/orders"
@@ -93,45 +184,61 @@ export default function AdminDashboardPage() {
             label="View Orders"
           />
           <QuickAction
+            href="/admin-panel/products"
+            icon="📦"
+            label="Manage Products"
+          />
+          <QuickAction
             href="/admin-panel/settings"
             icon="⚙️"
             label="Store Settings"
           />
-          <QuickAction
-            href="/admin-panel/analytics"
-            icon="📈"
-            label="Analytics"
-          />
         </div>
       </div>
 
-      {/* Revenue chart placeholder */}
+      {/* Revenue chart */}
       <div className="mt-8 rounded-lg border border-border-subtle bg-white p-6 shadow-card-dark">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="font-serif text-base font-bold text-text-primary md:text-lg">
               Revenue This Month
             </h3>
             <p className="mt-0.5 text-xs text-text-muted">
-              Daily breakdown — resets on the 1st of every month
+              {monthOrders.length} orders · {formatBDT(monthStats.revenue)} total
             </p>
           </div>
           <span className="rounded-full bg-bg-orange px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gold-primary">
             Live
           </span>
         </div>
-        <div className="flex h-40 items-end gap-1 rounded-lg bg-bg-input p-4">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-t bg-gradient-to-t from-gold-primary/30 to-gold-primary/10"
-              style={{ height: `${Math.random() * 60 + 10}%` }}
-            />
-          ))}
-        </div>
-        <p className="mt-3 text-center text-[11px] text-text-muted">
-          Revenue data will populate as orders come in
-        </p>
+
+        {loading ? (
+          <div className="flex h-40 items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+          </div>
+        ) : (
+          <>
+            <div className="flex h-40 items-end gap-1 rounded-lg bg-bg-input p-3">
+              {chartData.map((d) => {
+                const heightPct =
+                  d.revenue > 0 ? Math.max(6, (d.revenue / maxRevenue) * 100) : 0;
+                return (
+                  <div
+                    key={d.day}
+                    className="group relative flex-1 rounded-t bg-gradient-to-t from-gold-primary to-gold-luxury transition hover:from-red-primary hover:to-red-bright"
+                    style={{ height: `${heightPct}%`, minHeight: "2px" }}
+                    title={`Day ${d.day}: ${formatBDT(d.revenue)}`}
+                  />
+                );
+              })}
+            </div>
+            <p className="mt-3 text-center text-[11px] text-text-muted">
+              {monthStats.revenue > 0
+                ? `Peak day: ${formatBDT(maxRevenue)}`
+                : "No revenue yet this month"}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -150,17 +257,20 @@ function BigStat({
   icon: string;
   accent: "gold" | "red";
 }) {
-  const accentColor = accent === "gold" ? "text-gold-primary" : "text-red-primary";
+  const accentColor =
+    accent === "gold" ? "text-gold-primary" : "text-red-primary";
   const accentBg = accent === "gold" ? "bg-bg-orange" : "bg-red-primary/10";
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
       <div className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
             {label}
           </p>
-          <p className={`mt-2 text-2xl font-bold md:text-3xl ${accentColor}`}>
+          <p
+            className={`mt-2 truncate text-2xl font-bold md:text-3xl ${accentColor}`}
+          >
             {value}
           </p>
           <p className="mt-1 text-[11px] text-text-muted">{sub}</p>
@@ -190,7 +300,7 @@ function SmallStat({
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-lg font-bold text-text-primary">{value}</p>
+        <p className="truncate text-lg font-bold text-text-primary">{value}</p>
         <p className="text-[11px] text-text-muted">{label}</p>
       </div>
     </div>

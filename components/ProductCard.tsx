@@ -7,6 +7,11 @@ import { formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 
+function hasChinese(text: string | undefined): boolean {
+  if (!text) return false;
+  return /[\u4e00-\u9fff]/.test(text);
+}
+
 export default function ProductCard({ product }: { product: Product }) {
   const wishlist = useWishlist();
   const cart = useCart();
@@ -21,6 +26,10 @@ export default function ProductCard({ product }: { product: Product }) {
   };
 
   const showImage = product.image && !imgFailed;
+
+  // Hide Chinese subtitle
+  const subtitle =
+    product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
 
   return (
     <div className="group relative overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
@@ -70,9 +79,9 @@ export default function ProductCard({ product }: { product: Product }) {
           <h3 className="text-[12px] font-medium leading-tight text-text-primary line-clamp-2 min-h-[32px] md:text-[13px]">
             {product.title}
           </h3>
-          {product.subtitle && (
+          {subtitle && (
             <p className="mt-0.5 text-[10px] text-text-muted line-clamp-1 md:text-[11px]">
-              {product.subtitle}
+              {subtitle}
             </p>
           )}
           <div className="mt-1 flex items-center gap-1 text-[10px] md:text-[11px]">

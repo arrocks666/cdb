@@ -2,9 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Product, formatBDT } from "@/lib/data";
+import { Product } from "@/lib/ProductsContext";
+import { formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
+
+function hasChinese(text: string | undefined): boolean {
+  if (!text) return false;
+  return /[\u4e00-\u9fff]/.test(text);
+}
 
 export default function WishlistCard({ product }: { product: Product }) {
   const wishlist = useWishlist();
@@ -12,11 +18,14 @@ export default function WishlistCard({ product }: { product: Product }) {
   const [imgFailed, setImgFailed] = useState(false);
 
   const handleAddToCart = () => {
-    const defaultColorId = product.colors[0]?.id ?? "default";
+    const defaultColorId = product.colors?.[0]?.id ?? "default";
     cart.add(product.id, defaultColorId, 1);
   };
 
   const showImage = product.image && !imgFailed;
+
+  const subtitle =
+    product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
 
   return (
     <div className="group relative overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
@@ -58,15 +67,15 @@ export default function WishlistCard({ product }: { product: Product }) {
         <h3 className="text-[12px] font-medium leading-tight text-text-primary line-clamp-2 min-h-[32px] md:text-[13px]">
           {product.title}
         </h3>
-        {product.subtitle && (
+        {subtitle && (
           <p className="mt-0.5 text-[10px] text-text-muted line-clamp-1 md:text-[11px]">
-            {product.subtitle}
+            {subtitle}
           </p>
         )}
         <div className="mt-1 flex items-center gap-1 text-[10px] md:text-[11px]">
           <span className="text-gold-primary">★</span>
-          <span className="text-text-secondary">{product.rating.toFixed(1)}</span>
-          <span className="text-text-muted">({product.reviews})</span>
+          <span className="text-text-secondary">{(product.rating ?? 4.5).toFixed(1)}</span>
+          <span className="text-text-muted">({product.reviews ?? 0})</span>
         </div>
         <div className="mt-1.5 flex items-baseline gap-1.5">
           <span className="text-base font-bold text-red-primary md:text-lg">

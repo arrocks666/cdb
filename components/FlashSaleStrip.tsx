@@ -25,10 +25,11 @@ export default function FlashSaleStrip() {
 
   const pad = (n: number) => n.toString().padStart(2, "0");
 
-  // Flash sale products — admin-flagged first, fall back to top-rated
-  const flashFlagged = products.filter((p) => p.isFlashSale);
-  const fallback = [...products].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-  const flashProducts = (flashFlagged.length > 0 ? flashFlagged : fallback).slice(0, 4);
+  // ONLY admin-flagged products
+  const flashProducts = products.filter((p) => p.isFlashSale === true).slice(0, 4);
+
+  // Hide section if nothing flagged
+  if (flashProducts.length === 0) return null;
 
   return (
     <section className="bg-white px-3 py-3 md:px-4 md:py-4">

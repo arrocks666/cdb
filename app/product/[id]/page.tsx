@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useProducts } from "@/lib/ProductsContext";
@@ -8,6 +8,25 @@ import { formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 import { useWhatsApp } from "@/lib/WhatsAppContext";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
+import { hasChinese, translateLocation } from "@/lib/chinaLocations";
+import { trackProductView } from "@/lib/firestoreAnalytics";
+
+function findLocation(features?: { icon: string; label: string }[]): string | null {
+  if (!features) return null;
+  for (const f of features) {
+    if (!f.label) continue;
+    if (hasChinese(f.label)) {
+      const t = translateLocation(f.label);
+      if (t) return `${t}, China`;
+    }
+  }
+  return null;
+}
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -23,6 +42,26 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   const [activeImage, setActiveImage] = useState(0);
   const [addedFeedback, setAddedFeedback] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  // Track product view once per product per session
+  useEffect(() => {
+    if (!product) return;
+    const KEY = `cdb_viewed_${product.id}`;
+    if (sessionStorage.getItem(KEY)) return;
+    sessionStorage.setItem(KEY, "1");
+    trackProductView(
+      product.id,
+      product.title,
+      product.image,
+      0,
+      product.isLive === true
+    ).catch(() => {});
+  }, [product]);
 
   if (loading) {
     return (
@@ -46,6 +85,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   const selectedColorId = product.colors?.[0]?.id ?? "default";
   const gallery = product.gallery?.length ? product.gallery : [product.image];
   const currentImage = gallery[activeImage];
+  const subtitle = product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
+  const location = findLocation(product.features);
 
   const handleAddToCart = () => {
     cart.add(product.id, selectedColorId, quantity);
@@ -57,8 +98,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     router.push("/cart");
   };
   const handleWhatsApp = () => {
-    const productUrl = typeof window !== "undefined" ? `${window.location.origin}/product/${product.id}` : "";
-    whatsapp.openWhatsApp(product.title, productUrl);
+    const url = typeof window !== "undefined" ? `${window.location.origin}/product/${product.id}` : "";
+    whatsapp.openWhatsApp(product.title, url);
   };
 
   const showImage = currentImage && !imgFailed;
@@ -69,11 +110,7 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
         <button onClick={() => router.back()} className="flex h-9 w-9 items-center justify-center text-text-primary transition hover:text-gold-primary">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
-        <button
-          aria-label={inWishlist ? "Remove" : "Add"}
-          onClick={() => wishlist.toggle(product.id)}
-          className={`flex h-9 w-9 items-center justify-center rounded-full transition ${inWishlist ? "bg-red-primary text-white" : "text-text-muted hover:text-red-primary"}`}
-        >
+        <button onClick={() => wishlist.toggle(product.id)} className={`flex h-9 w-9 items-center justify-center rounded-full transition ${inWishlist ? "bg-red-primary text-white" : "text-text-muted hover:text-red-primary"}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
         </button>
       </div>
@@ -104,8 +141,17 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
 
           <div>
             <h1 className="text-xl font-bold leading-tight text-text-primary md:text-3xl">{product.title}</h1>
-            {product.subtitle && <p className="mt-1 text-base font-medium text-text-secondary md:text-lg">{product.subtitle}</p>}
-            {product.supplierName && <p className="mt-1 text-xs text-text-muted md:text-sm">by {product.supplierName}</p>}
+            {subtitle && <p className="mt-1 text-base font-medium text-text-secondary md:text-lg">{subtitle}</p>}
+
+            {location && (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-gold-primary/40 bg-bg-orange px-4 py-2.5 text-sm font-semibold text-gold-primary md:text-base">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                {location}
+              </div>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               <div className="flex items-center gap-1">
@@ -125,19 +171,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               <div className="inline-flex items-center gap-1.5 text-xs md:text-sm">
                 <span className="h-2 w-2 rounded-full bg-success" />
                 <span className="font-semibold text-success">In Stock</span>
-                {product.moq && product.moq > 1 && <span className="text-text-muted">— Min order: {product.moq} pcs</span>}
               </div>
             </div>
-
-            {product.features && product.features.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {product.features.map((chip, i) => (
-                  <div key={`${chip.label}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-input px-3 py-1.5 text-[11px] font-medium text-text-secondary md:text-xs">
-                    <span>{chip.icon}</span>{chip.label}
-                  </div>
-                ))}
-              </div>
-            )}
 
             <div className="mt-5">
               <div className="mb-2 text-xs text-text-secondary md:text-sm">Quantity</div>
@@ -177,10 +212,31 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               Order via WhatsApp
             </button>
 
-            {product.description && (
+            {product.description && !hasChinese(product.description) && (
               <div className="mt-6 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">Description</h2>
                 <p className="text-xs leading-relaxed text-text-secondary md:text-sm">{product.description}</p>
+              </div>
+            )}
+
+            {settings.howToOrder && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">How to Order</h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">{settings.howToOrder}</p>
+              </div>
+            )}
+
+            {settings.deliveryInfo && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">Delivery Info</h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">{settings.deliveryInfo}</p>
+              </div>
+            )}
+
+            {settings.returnPolicy && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">Return Policy</h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">{settings.returnPolicy}</p>
               </div>
             )}
           </div>

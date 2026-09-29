@@ -22,8 +22,16 @@ const playfair = Playfair_Display({
   display: "swap",
 });
 
+// ⚠️ Change this to your real URL AFTER deploying to Netlify
+// Example: "https://chinadailybazar.netlify.app"
+const SITE_URL = "https://chinadailybazar.netlify.app";
+
 export const metadata: Metadata = {
-  title: "ChinaDailyBazar — Best Chinese Products • Better Prices • Delivered to Bangladesh",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "ChinaDailyBazar — Best Chinese Products Delivered to Bangladesh",
+    template: "%s | ChinaDailyBazar",
+  },
   description:
     "Premium Chinese products delivered to Bangladesh. Trendy, quality, affordable. Shop electronics, fashion, home & living and more.",
   keywords: [
@@ -32,6 +40,37 @@ export const metadata: Metadata = {
     "online shopping Bangladesh",
     "e-commerce BD",
   ],
+
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
+
+  openGraph: {
+    type: "website",
+    siteName: "ChinaDailyBazar",
+    title: "ChinaDailyBazar — Best Chinese Products",
+    description:
+      "Trendy Chinese products at unbeatable prices. Delivered across Bangladesh in 7–15 days.",
+    url: SITE_URL,
+    images: [
+      {
+        url: "/og-image.svg",
+        width: 1200,
+        height: 630,
+        alt: "ChinaDailyBazar — Best Chinese Products Delivered to Bangladesh",
+      },
+    ],
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "ChinaDailyBazar",
+    description:
+      "Trendy Chinese products at unbeatable prices. Delivered across Bangladesh.",
+    images: ["/og-image.svg"],
+  },
 };
 
 export default function RootLayout({

@@ -18,7 +18,7 @@ const menuItems: MenuItem[] = [
 
 export default function AccountPage() {
   const router = useRouter();
-  const { user, profile, loading, isAdmin, logout } = useAuth();
+  const { user, profile, loading, logout } = useAuth();
 
   const handleLogout = async () => {
     if (!confirm("Are you sure you want to logout?")) return;
@@ -35,15 +35,14 @@ export default function AccountPage() {
   }
 
   if (user) {
-    // Show ONLY:
-    // - profile.phone (real phone from Firestore)
-    // - user.displayName (we set this to phone at signup)
-    // - NEVER user.email (that's the fake email)
     const phone = profile?.phone || user.displayName || "Customer";
 
-    // Show real email only if user provided one at signup and it's saved in Firestore
+    // Hide fake @chinadailybazar.app emails — they are never real
+    const rawEmail = profile?.email?.trim() ?? "";
     const emailToShow =
-      profile?.email && profile.email.trim() !== "" ? profile.email.trim() : null;
+      rawEmail !== "" && !rawEmail.endsWith("@chinadailybazar.app")
+        ? rawEmail
+        : null;
 
     return (
       <div className="min-h-screen bg-bg-secondary">
@@ -57,11 +56,6 @@ export default function AccountPage() {
               </svg>
             </button>
             <h1 className="flex-1 text-lg font-bold leading-none text-text-primary md:text-xl">Account</h1>
-            {isAdmin && (
-              <Link href="/admin" className="rounded-full bg-red-primary px-3 py-1.5 text-[11px] font-bold text-white shadow-red-glow md:text-xs">
-                Admin
-              </Link>
-            )}
           </div>
         </div>
 
@@ -82,7 +76,7 @@ export default function AccountPage() {
                 )}
                 <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-gold-primary/50 bg-bg-orange px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-primary md:text-xs">
                   <span>⭐</span>
-                  {isAdmin ? "Admin" : "Member"}
+                  Member
                 </div>
               </div>
             </div>

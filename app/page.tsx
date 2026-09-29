@@ -9,9 +9,8 @@ import { useProducts } from "@/lib/ProductsContext";
 export default function HomePage() {
   const { products, loading } = useProducts();
 
-  const trending = [...products]
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-    .slice(0, 100);
+  // ONLY admin-flagged trending products. No fallback.
+  const trending = products.filter((p) => p.isTrending === true);
 
   return (
     <div className="bg-bg-secondary">
@@ -33,6 +32,16 @@ export default function HomePage() {
           {loading ? (
             <div className="flex justify-center py-20">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+            </div>
+          ) : trending.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-subtle bg-bg-input py-16 text-center">
+              <div className="text-5xl opacity-40">🔥</div>
+              <h3 className="mt-3 text-base font-bold text-text-primary md:text-lg">
+                Trending products coming soon
+              </h3>
+              <p className="mt-1 max-w-xs text-xs text-text-muted md:text-sm">
+                Check back soon for our featured picks.
+              </p>
             </div>
           ) : (
             <ProductGrid products={trending} />

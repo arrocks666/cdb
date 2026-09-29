@@ -1,6 +1,5 @@
 // lib/live-search.ts
-// Live 1688 search wrapper using the same Apify actor
-// This returns a product in the SAME shape as our stored products
+// Live 1688 search — fetches 3, returns the 3 BEST-SELLING
 
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
@@ -9,7 +8,6 @@ import { translateToEnglish } from "./translation";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const APIFY_1688_ACTOR_ID = process.env.APIFY_1688_ACTOR_ID;
-const USD_TO_BDT = parseInt(process.env.USD_TO_BDT ?? "121", 10);
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN in .env.local");
 if (!APIFY_1688_ACTOR_ID) throw new Error("Missing APIFY_1688_ACTOR_ID in .env.local");
@@ -111,6 +109,22 @@ async function transformLiveProduct(raw: Raw1688Product): Promise<LiveProduct | 
   };
 }
 
+/**
+ * Sort raw products by best-selling.
+ * Priority: saleQuantity desc, then compositeScore desc.
+ */
+function sortByBestSelling(items: Raw1688Product[]): Raw1688Product[] {
+  return [...items].sort((a, b) => {
+    const saleA = a.saleQuantity ?? 0;
+    const saleB = b.saleQuantity ?? 0;
+    if (saleB !== saleA) return saleB - saleA;
+
+    const scoreA = a.compositeScore ?? 0;
+    const scoreB = b.compositeScore ?? 0;
+    return scoreB - scoreA;
+  });
+}
+
 export async function liveSearch1688(
   keyword: string,
   maxResults: number = 3
@@ -138,8 +152,11 @@ export async function liveSearch1688(
   }
 
   const items = (await response.json()) as Raw1688Product[];
-  const valid = items.filter((i) => !i.error);
+  const valid = items.filter((i) => !i.error && i.price > 0 && i.imageUrl);
 
-  const transformed = await Promise.all(valid.map(transformLiveProduct));
+  // Sort the same 3 by best-selling
+  const sorted = sortByBestSelling(valid);
+
+  const transformed = await Promise.all(sorted.map(transformLiveProduct));
   return transformed.filter(Boolean) as LiveProduct[];
 }

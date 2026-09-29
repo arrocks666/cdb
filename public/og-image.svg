@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6600"/>
+      <stop offset="100%" stop-color="#FF8534"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Logo circle -->
+  <circle cx="200" cy="315" r="120" fill="#FFFFFF" opacity="0.15"/>
+  <circle cx="200" cy="315" r="90" fill="#FFFFFF"/>
+  <text x="200" y="368" font-family="Arial, Helvetica, sans-serif" font-size="110" font-weight="700" fill="#FF6600" text-anchor="middle">买</text>
+
+  <!-- Brand name -->
+  <text x="360" y="280" font-family="Georgia, serif" font-size="86" font-weight="700" fill="#FFFFFF">ChinaDailyBazar</text>
+
+  <!-- Tagline -->
+  <text x="360" y="360" font-family="Arial, Helvetica, sans-serif" font-size="34" fill="#FFFFFF" opacity="0.95">Best Chinese Products</text>
+  <text x="360" y="410" font-family="Arial, Helvetica, sans-serif" font-size="34" fill="#FFFFFF" opacity="0.95">Better Prices • Delivered to Bangladesh</text>
+
+  <!-- Bottom strip -->
+  <rect x="0" y="560" width="1200" height="70" fill="#000000" opacity="0.15"/>
+  <text x="600" y="604" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="#FFFFFF" text-anchor="middle">chinadailybazar.com</text>
+</svg>

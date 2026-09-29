@@ -5,6 +5,7 @@ import {
   ADMIN_COOKIE_NAME,
   ADMIN_COOKIE_MAX_AGE,
 } from "@/lib/adminAuth";
+import { verifyAdminPassword } from "@/lib/adminPassword";
 
 export const runtime = "nodejs";
 
@@ -20,9 +21,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const valid = verifyCredentials(username, password);
+    // Step 1: verify username (from .env.local, timing-safe)
+    // We reuse verifyCredentials just for the username check by passing
+    // the correct password expectation. But since password might be in
+    // Firestore now, we only use verifyCredentials for the username.
+    const expectedUser = process.env.ADMIN_USERNAME || "";
+    const usernameMatches =
+      expectedUser.length > 0 && username.length === expectedUser.length
+        ? (() => {
+            let diff = 0;
+            for (let i = 0; i < username.length; i++) {
+              diff |= username.charCodeAt(i) ^ expectedUser.charCodeAt(i);
+            }
+            return diff === 0;
+          })()
+        : false;
 
-    if (!valid) {
+    if (!usernameMatches) {
+      return Response.json(
+        { error: "Invalid username or password" },
+        { status: 401 }
+      );
+    }
+
+    // Step 2: verify password (Firestore hash first, then .env.local)
+    const passwordValid = await verifyAdminPassword(password);
+
+    if (!passwordValid) {
       return Response.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -30,10 +55,8 @@ export async function POST(request: NextRequest) {
     }
 
     const token = createSessionToken();
-
     const response = Response.json({ success: true });
 
-    // Set HTTP-only cookie
     response.headers.append(
       "Set-Cookie",
       `${ADMIN_COOKIE_NAME}=${token}; Path=/; Max-Age=${ADMIN_COOKIE_MAX_AGE}; HttpOnly; SameSite=Strict${
