@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { products } from "@/lib/data";
+import { useProducts } from "@/lib/ProductsContext";
 import WishlistCard from "@/components/WishlistCard";
 import LiveProductCard from "@/components/LiveProductCard";
 import { useWishlist } from "@/lib/WishlistContext";
@@ -10,6 +10,7 @@ import { useWishlist } from "@/lib/WishlistContext";
 export default function WishlistPage() {
   const router = useRouter();
   const wishlist = useWishlist();
+  const { products } = useProducts();
 
   const localItems = products.filter((p) => wishlist.ids.includes(p.id));
   const liveItems = wishlist.liveItems;
