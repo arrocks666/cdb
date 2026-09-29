@@ -1,7 +1,4 @@
 // lib/firestoreSettings.ts
-// Read/write store settings from Firestore.
-// Settings live in: settings/general (single doc)
-
 import {
   doc,
   getDoc,
@@ -12,22 +9,19 @@ import { db } from "./firebase";
 import { DEFAULT_PRICING, type PricingConfig } from "./pricing";
 
 export type StoreSettings = {
-  // Pricing
   cnyToUsd: number;
   usdToBdt: number;
 
-  // Product page content
   returnPolicy: string;
   deliveryInfo: string;
   howToOrder: string;
 
-  // Contact / help page
   contactPhone: string;
   contactEmail: string;
   contactAddress: string;
   whatsappNumber: string;
+  whatsappNumber2: string;
 
-  // Meta
   updatedAt?: unknown;
 };
 
@@ -45,14 +39,12 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   contactPhone: "+880 1XXX-XXXXXX",
   contactEmail: "support@chinadailybazar.com",
   contactAddress: "Dhaka, Bangladesh",
-  whatsappNumber: "8801XXXXXXXXX",
+  whatsappNumber: "8801689768307",
+  whatsappNumber2: "8619822310841",
 };
 
 const SETTINGS_DOC = ["settings", "general"] as const;
 
-/**
- * Load settings from Firestore. Falls back to defaults for any missing field.
- */
 export async function loadSettings(): Promise<StoreSettings> {
   try {
     const ref = doc(db, SETTINGS_DOC[0], SETTINGS_DOC[1]);
@@ -73,9 +65,6 @@ export async function loadSettings(): Promise<StoreSettings> {
   }
 }
 
-/**
- * Save settings to Firestore (merges with existing).
- */
 export async function saveSettings(
   partial: Partial<StoreSettings>
 ): Promise<void> {
@@ -90,9 +79,6 @@ export async function saveSettings(
   );
 }
 
-/**
- * Convert StoreSettings → PricingConfig for lib/pricing.ts.
- */
 export function settingsToPricing(settings: StoreSettings): PricingConfig {
   return {
     ...DEFAULT_PRICING,

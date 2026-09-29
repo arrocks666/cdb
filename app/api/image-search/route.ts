@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { rehostImage, imageSearch1688 } from "@/lib/image-search";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,7 +29,16 @@ export async function POST(request: NextRequest) {
     console.log("Hosted at:", hostedUrl);
 
     console.log("Searching 1688 by image...");
-    const products = await imageSearch1688(hostedUrl, 5);
+    // Race against a 100-second timeout
+    const products = await Promise.race([
+      imageSearch1688(hostedUrl, 5),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Search timed out. Please try again.")),
+          100_000
+        )
+      ),
+    ]);
     console.log(`Found ${products.length} matches`);
 
     return Response.json({

@@ -17,7 +17,7 @@ export default function ProductGrid({ products }: { products: Product[] }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5 items-stretch">
       {unique.map((p) => (
         <ProductCard key={`${p.id}-${p.image}`} product={p} />
       ))}

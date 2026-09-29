@@ -17,22 +17,28 @@ export default function ProductCard({ product }: { product: Product }) {
   const cart = useCart();
   const inWishlist = wishlist.has(product.id);
   const [imgFailed, setImgFailed] = useState(false);
+  const [added, setAdded] = useState(false);
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const defaultColorId = product.colors?.[0]?.id ?? "default";
-    cart.add(product.id, defaultColorId, 1);
+    try {
+      const defaultColorId = product.colors?.[0]?.id ?? "default";
+      cart.add(product.id, defaultColorId, 1);
+      setAdded(true);
+      setTimeout(() => setAdded(false), 1500);
+    } catch (err) {
+      console.error("Add to cart failed:", err);
+    }
   };
 
   const showImage = product.image && !imgFailed;
 
-  // Hide Chinese subtitle
   const subtitle =
     product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
 
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
+    <div className="group flex h-full flex-col overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
       <div
         role="button"
         tabIndex={0}
@@ -53,7 +59,7 @@ export default function ProductCard({ product }: { product: Product }) {
         </svg>
       </div>
 
-      <Link href={`/product/${product.id}`} className="block">
+      <Link href={`/product/${product.id}`} className="block flex-1">
         <div className="relative aspect-square flex items-center justify-center overflow-hidden rounded-md m-2" style={{ backgroundColor: "#F9F9F9" }}>
           {showImage ? (
             <img
@@ -102,18 +108,29 @@ export default function ProductCard({ product }: { product: Product }) {
         </div>
       </Link>
 
-      <div className="px-2.5 pb-2.5 md:px-3 md:pb-3">
+      {/* Fixed-height button footer for consistent alignment */}
+      <div className="mt-auto px-2.5 pb-2.5 md:px-3 md:pb-3">
         <button
           onClick={handleAddToCart}
           disabled={!product.inStock}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gold-primary py-2 text-[11px] font-semibold text-white transition hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40 md:text-[12px]"
+          className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-semibold text-white transition md:text-[12px] ${
+            added
+              ? "bg-success"
+              : "bg-gold-primary hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40"
+          }`}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
-            <circle cx="9" cy="21" r="1" />
-            <circle cx="20" cy="21" r="1" />
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-          </svg>
-          {product.inStock ? "Add to Cart" : "Out of Stock"}
+          {added ? (
+            <>✓ Added</>
+          ) : (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+                <circle cx="9" cy="21" r="1" />
+                <circle cx="20" cy="21" r="1" />
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+              </svg>
+              {product.inStock ? "Add to Cart" : "Out of Stock"}
+            </>
+          )}
         </button>
       </div>
     </div>

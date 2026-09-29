@@ -14,6 +14,7 @@ const navItems: NavItem[] = [
   { href: "/admin-panel/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/admin-panel/products", label: "Products", icon: "📦" },
   { href: "/admin-panel/orders", label: "Orders", icon: "🧾" },
+  { href: "/admin-panel/users", label: "Users", icon: "👥" },
   { href: "/admin-panel/settings", label: "Settings", icon: "⚙️" },
   { href: "/admin-panel/analytics", label: "Analytics", icon: "📈" },
 ];
@@ -27,7 +28,6 @@ export default function AdminLayout({
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Don't show sidebar on login page
   const isLoginPage = pathname === "/admin-panel/login";
 
   const handleLogout = async () => {
@@ -38,13 +38,11 @@ export default function AdminLayout({
   };
 
   if (isLoginPage) {
-    // Login page renders without admin shell
     return <>{children}</>;
   }
 
   return (
     <div className="min-h-screen bg-bg-secondary flex">
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
@@ -52,14 +50,12 @@ export default function AdminLayout({
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-bg-base text-text-primary transition-transform duration-200 md:relative md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="flex h-full flex-col border-r border-border-subtle">
-          {/* Logo */}
           <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-4">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-primary text-lg font-bold text-white shadow-orange-glow">
               买
@@ -73,7 +69,6 @@ export default function AdminLayout({
             </div>
           </div>
 
-          {/* Nav */}
           <nav className="flex-1 px-3 py-4">
             <ul className="space-y-1">
               {navItems.map((item) => {
@@ -100,7 +95,6 @@ export default function AdminLayout({
             </ul>
           </nav>
 
-          {/* Footer */}
           <div className="border-t border-border-subtle p-3">
             <Link
               href="/"
@@ -120,9 +114,7 @@ export default function AdminLayout({
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 min-w-0">
-        {/* Mobile header */}
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border-subtle bg-white px-4 py-3 shadow-sm md:hidden">
           <button
             onClick={() => setSidebarOpen(true)}

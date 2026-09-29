@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
 const faqs = [
   { q: "How do I place an order?", a: "Browse products, tap 'Add to Cart' on items you like, then go to your cart and tap 'Proceed to Checkout'. Follow the 3 steps: address, payment, and confirm." },
@@ -15,8 +20,18 @@ export default function HelpPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
 
-  const filtered = faqs.filter((f) => f.q.toLowerCase().includes(search.toLowerCase()));
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  const filtered = faqs.filter((f) =>
+    f.q.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const hasContactInfo =
+    settings.whatsappNumber || settings.contactEmail;
 
   return (
     <div className="min-h-screen bg-bg-secondary">
@@ -37,13 +52,23 @@ export default function HelpPage() {
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           </span>
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search for help..." className="w-full rounded-full border border-border-subtle bg-white py-2.5 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search for help..."
+            className="w-full rounded-full border border-border-subtle bg-white py-2.5 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+          />
         </div>
 
         <div className="mt-5">
-          <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Popular Questions</h2>
+          <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+            Popular Questions
+          </h2>
           {filtered.length === 0 ? (
-            <p className="rounded-lg border border-border-subtle bg-white p-4 text-center text-xs text-text-muted md:text-sm">No results found for "{search}"</p>
+            <p className="rounded-lg border border-border-subtle bg-white p-4 text-center text-xs text-text-muted md:text-sm">
+              No results found for "{search}"
+            </p>
           ) : (
             <div className="space-y-2">
               {filtered.map((faq, i) => {
@@ -62,23 +87,62 @@ export default function HelpPage() {
           )}
         </div>
 
-        <div className="mt-8">
-          <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Need More Help?</h2>
-          <div className="space-y-2">
-            <ContactRow icon="💬" title="Live Chat" subtitle="Chat with our support team" onClick={() => alert("Live chat coming soon!")} />
-            <ContactRow icon="📱" title="WhatsApp" subtitle="+880 1965 119476" onClick={() => { window.open("https://wa.me/8801965119476", "_blank"); }} />
-            <ContactRow icon="✉️" title="Email Us" subtitle="support@chinadailybazar.com" onClick={() => { window.location.href = "mailto:support@chinadailybazar.com"; }} />
+        {hasContactInfo && (
+          <div className="mt-8">
+            <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+              Need More Help?
+            </h2>
+            <div className="space-y-2">
+              {settings.whatsappNumber && (
+                <ContactRow
+                  icon="📱"
+                  title="WhatsApp"
+                  subtitle={settings.whatsappNumber}
+                  onClick={() => {
+                    window.open(
+                      `https://wa.me/${settings.whatsappNumber.replace(/\D/g, "")}`,
+                      "_blank"
+                    );
+                  }}
+                />
+              )}
+              {settings.contactEmail && (
+                <ContactRow
+                  icon="✉️"
+                  title="Email Us"
+                  subtitle={settings.contactEmail}
+                  onClick={() => {
+                    window.location.href = `mailto:${settings.contactEmail}`;
+                  }}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function ContactRow({ icon, title, subtitle, onClick }: { icon: string; title: string; subtitle: string; onClick: () => void }) {
+function ContactRow({
+  icon,
+  title,
+  subtitle,
+  onClick,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
   return (
-    <button onClick={onClick} className="group flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-white p-3 shadow-card-dark transition hover:shadow-card-hover md:p-4">
-      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bg-orange text-lg md:text-xl">{icon}</div>
+    <button
+      onClick={onClick}
+      className="group flex w-full items-center gap-3 rounded-lg border border-border-subtle bg-white p-3 shadow-card-dark transition hover:shadow-card-hover md:p-4"
+    >
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-bg-orange text-lg md:text-xl">
+        {icon}
+      </div>
       <div className="flex-1 text-left">
         <p className="text-sm font-semibold text-text-primary md:text-base">{title}</p>
         <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">{subtitle}</p>

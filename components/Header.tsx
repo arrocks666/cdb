@@ -68,39 +68,55 @@ export default function Header() {
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-border-subtle bg-white shadow-sm">
-        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 pt-3 pb-2">
-          <button
-            aria-label="Menu"
-            className="flex h-9 w-9 items-center justify-center text-text-primary transition hover:text-gold-primary"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="3" y1="7" x2="21" y2="7" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="17" x2="21" y2="17" />
-            </svg>
-          </button>
+        <div className="relative mx-auto flex max-w-[1800px] items-center justify-between gap-2 px-3 py-2.5 md:gap-3 md:px-4 md:py-3">
 
+          {/* LEFT GROUP — badge + logo + text (desktop shows all, mobile shows only badge) */}
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1 rounded-md border border-gold-primary/40 bg-bg-orange px-2 py-1 md:gap-1.5 md:px-2.5 md:py-1.5">
+              <span className="text-sm md:text-base">🇨🇳</span>
+              <span className="text-[8px] font-bold text-gold-primary md:text-[10px]">→</span>
+              <span className="text-sm md:text-base">🇧🇩</span>
+            </div>
+
+            {/* Desktop-only: logo + brand text next to badge */}
+            <button
+              onClick={() => router.push("/")}
+              className="hidden items-center gap-2 md:flex"
+            >
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-gold-primary text-base font-bold text-white shadow-orange-glow">
+                买
+              </div>
+              <div className="font-serif text-xl font-bold leading-none">
+                <span className="text-text-primary">ChinaDaily</span>
+                <span className="text-gold-primary">Bazar</span>
+              </div>
+            </button>
+          </div>
+
+          {/* CENTER — logo + brand text (mobile only) */}
           <button
             onClick={() => router.push("/")}
-            className="flex flex-1 items-center justify-center gap-2 md:flex-none md:justify-start"
+            className="absolute left-[53%] top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 md:hidden"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gold-primary text-base font-bold text-white shadow-orange-glow">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gold-primary text-sm font-bold text-white shadow-orange-glow">
               买
             </div>
-            <div className="font-serif text-lg font-bold leading-none md:text-xl">
+            <span className="font-serif text-base font-bold leading-none">
               <span className="text-text-primary">ChinaDaily</span>
               <span className="text-gold-primary">Bazar</span>
-            </div>
+            </span>
           </button>
 
-          <nav className="hidden items-center gap-6 pl-8 text-sm font-medium md:flex">
+          {/* DESKTOP NAV */}
+          <nav className="ml-auto hidden items-center gap-6 text-sm font-medium md:flex">
             <button onClick={() => router.push("/")} className="text-text-primary transition hover:text-gold-primary">Home</button>
             <button onClick={() => router.push("/categories")} className="text-text-secondary transition hover:text-gold-primary">Categories</button>
             <button onClick={() => router.push("/search")} className="text-text-secondary transition hover:text-gold-primary">Search</button>
             <button onClick={() => router.push("/account")} className="text-text-secondary transition hover:text-gold-primary">Account</button>
           </nav>
 
-          <div className="ml-auto flex items-center gap-1">
+          {/* RIGHT — actions */}
+          <div className="ml-auto flex flex-shrink-0 items-center gap-1 md:ml-0">
             <button
               aria-label="Wishlist"
               onClick={() => router.push("/wishlist")}
@@ -131,12 +147,11 @@ export default function Header() {
         </div>
 
         {showSearchBar && (
-          <div className="bg-white px-4 pb-3" ref={wrapperRef}>
+          <div className="bg-white px-3 pb-2.5 md:px-4 md:pb-3" ref={wrapperRef}>
             <form onSubmit={handleSubmit} className="relative mx-auto max-w-[1800px]">
-              {/* 1688-style single pill: search icon left + camera icon right, no button */}
               <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-text-muted">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <span className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-text-muted md:left-4">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="md:h-[18px] md:w-[18px]">
                     <circle cx="11" cy="11" r="7" />
                     <line x1="21" y1="21" x2="16.65" y2="16.65" />
                   </svg>
@@ -152,7 +167,7 @@ export default function Header() {
                   }}
                   onFocus={() => setOpen(true)}
                   placeholder="Search products..."
-                  className="w-full rounded-full border border-border-subtle bg-bg-input py-2.5 pl-11 pr-12 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                  className="w-full rounded-full border border-border-subtle bg-bg-input py-2 pl-10 pr-11 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none md:py-2.5 md:pl-11 md:pr-12"
                 />
 
                 <button
@@ -162,9 +177,9 @@ export default function Header() {
                     setOpen(false);
                     setImageModalOpen(true);
                   }}
-                  className="absolute right-2 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full text-gold-primary transition hover:bg-bg-orange"
+                  className="absolute right-1.5 top-1/2 z-10 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-gold-primary transition hover:bg-bg-orange md:right-2 md:h-8 md:w-8"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="md:h-[18px] md:w-[18px]">
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                     <circle cx="12" cy="13" r="4" />
                   </svg>

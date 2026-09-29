@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { useState, useMemo, Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatBDT } from "@/lib/data";
@@ -9,6 +9,12 @@ import { useCart } from "@/lib/CartContext";
 import { useOrders } from "@/lib/OrderContext";
 import { useAuth } from "@/lib/AuthContext";
 import LoginPromptModal from "@/components/LoginPromptModal";
+import {
+  getUserCoupons,
+  filterValidCoupons,
+  markCouponUsed,
+  type Coupon,
+} from "@/lib/coupons";
 
 const PAYMENT_METHODS = [
   { id: "cod", label: "Cash on Delivery", icon: "💵", note: "Pay when you receive" },
@@ -54,6 +60,24 @@ function CheckoutContent() {
     district: "",
   });
 
+  // Coupon state
+  const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([]);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  // Load user's coupons when logged in
+  useEffect(() => {
+    if (!user) {
+      setAvailableCoupons([]);
+      return;
+    }
+    (async () => {
+      const all = await getUserCoupons(user.uid);
+      setAvailableCoupons(filterValidCoupons(all));
+    })();
+  }, [user]);
+
   const itemsParam = searchParams.get("items") ?? "";
   const selectedKeys = itemsParam
     ? itemsParam.split(",").filter(Boolean)
@@ -66,7 +90,6 @@ function CheckoutContent() {
       const key = `${item.productId}-${item.colorId}`;
       if (!selectedKeys.includes(key)) continue;
 
-      // Live product — use snapshot
       if (item.isLive && item.liveSnapshot) {
         result.push({
           productId: item.productId,
@@ -80,7 +103,6 @@ function CheckoutContent() {
         continue;
       }
 
-      // Stored product — look up in Firestore-backed products
       const product = products.find((p) => p.id === item.productId);
       if (!product) continue;
 
@@ -101,7 +123,29 @@ function CheckoutContent() {
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
   const shipping = rows.length > 0 ? 200 : 0;
-  const total = subtotal + shipping;
+  const discountAmount = appliedCoupon
+    ? Math.round((subtotal * appliedCoupon.percent) / 100)
+    : 0;
+  const total = subtotal + shipping - discountAmount;
+
+  const handleApplyCoupon = (code: string) => {
+    setCouponError(null);
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return;
+
+    const found = availableCoupons.find((c) => c.code === trimmed);
+    if (!found) {
+      setCouponError("Invalid or expired coupon");
+      return;
+    }
+    setAppliedCoupon(found);
+    setCouponInput("");
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError(null);
+  };
 
   const handlePlaceOrder = async () => {
     if (!user) {
@@ -130,6 +174,15 @@ function CheckoutContent() {
         paymentMethod: PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
         address,
       });
+
+      // Mark coupon as used (if applied)
+      if (appliedCoupon && user) {
+        try {
+          await markCouponUsed(user.uid, appliedCoupon, newOrder.id);
+        } catch (err) {
+          console.error("Failed to mark coupon used:", err);
+        }
+      }
 
       rows.forEach((r) => cart.remove(r.productId, r.colorId));
       router.push(`/orders/${newOrder.id}`);
@@ -242,10 +295,92 @@ function CheckoutContent() {
                 </div>
               </div>
 
+              {/* COUPON SECTION */}
+              {user && (
+                <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+                  <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                    Have a Coupon?
+                  </h2>
+
+                  {appliedCoupon ? (
+                    <div className="flex items-center justify-between rounded-lg border border-success/40 bg-success/5 px-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-success md:text-sm">
+                          ✓ {appliedCoupon.code} applied
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-text-muted">
+                          {appliedCoupon.percent}% off subtotal
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleRemoveCoupon}
+                        className="text-[11px] font-semibold text-red-primary underline md:text-xs"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponInput}
+                          onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                          placeholder="Enter code e.g. CDB-4F2A91"
+                          className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleApplyCoupon(couponInput)}
+                          disabled={!couponInput.trim()}
+                          className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+                        >
+                          Apply
+                        </button>
+                      </div>
+
+                      {couponError && (
+                        <p className="mt-2 text-[11px] text-red-primary md:text-xs">
+                          {couponError}
+                        </p>
+                      )}
+
+                      {availableCoupons.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                            Your Available Coupons
+                          </p>
+                          {availableCoupons.map((c) => (
+                            <button
+                              key={c.code}
+                              onClick={() => handleApplyCoupon(c.code)}
+                              className="flex w-full items-center justify-between rounded border border-gold-primary/30 bg-bg-orange px-3 py-2 text-xs transition hover:border-gold-primary"
+                            >
+                              <span className="font-mono font-bold text-gold-primary">
+                                {c.code}
+                              </span>
+                              <span className="font-semibold text-text-primary">
+                                {c.percent}% OFF
+                              </span>
+                              <span className="text-text-muted">Tap to apply</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
                 <div className="space-y-1.5 text-xs md:text-sm">
                   <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(subtotal)}</span></div>
                   <div className="flex justify-between text-text-secondary"><span>Shipping</span><span className="text-text-primary">{formatBDT(shipping)}</span></div>
+                  {appliedCoupon && discountAmount > 0 && (
+                    <div className="flex justify-between text-success">
+                      <span>Coupon ({appliedCoupon.percent}%)</span>
+                      <span>-{formatBDT(discountAmount)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-text-secondary"><span>Payment</span><span className="text-text-primary">{PAYMENT_METHODS.find((p) => p.id === payment)?.label}</span></div>
                   <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
                     <span className="text-sm font-semibold text-text-primary md:text-base">Total</span>

@@ -17,6 +17,7 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
     setPreview(null);
@@ -32,9 +33,21 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
     }
   }, [open, reset]);
 
+  // Actually cancel the in-flight request
+  const cancelSearch = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStage("idle");
+    setError(null);
+  }, []);
+
   const handleClose = () => {
     if (stage === "uploading" || stage === "searching" || stage === "ranking") {
-      return;
+      // Instead of silently refusing, prompt user
+      if (!confirm("Cancel image search?")) return;
+      cancelSearch();
     }
     onClose();
   };
@@ -67,6 +80,17 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
     setError(null);
     setStage("uploading");
 
+    // Create new abort controller for this request
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Auto-timeout: abort after 90 seconds (Apify can be slow)
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      setError("Search timed out. Please try again or upload a different photo.");
+      setStage("idle");
+    }, 90000);
+
     try {
       await new Promise((r) => setTimeout(r, 400));
       setStage("searching");
@@ -77,6 +101,7 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
       const res = await fetch("/api/image-search", {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -89,10 +114,22 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
       const data = await res.json();
 
+      clearTimeout(timeoutId);
+      abortRef.current = null;
+
       setStage("done");
       onResults(data.products ?? []);
       onClose();
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      abortRef.current = null;
+
+      if (err.name === "AbortError") {
+        // User cancelled — don't show error
+        setStage("idle");
+        return;
+      }
+
       console.error("Image search failed:", err);
       setError(err.message || "Something went wrong. Please try again.");
       setStage("idle");
@@ -101,7 +138,8 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
   if (!open) return null;
 
-  const isLoading = stage === "uploading" || stage === "searching" || stage === "ranking";
+  const isLoading =
+    stage === "uploading" || stage === "searching" || stage === "ranking";
 
   return (
     <div
@@ -125,9 +163,8 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
           </h2>
           <button
             onClick={handleClose}
-            disabled={isLoading}
             aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition hover:bg-bg-input hover:text-red-primary disabled:cursor-not-allowed disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition hover:bg-bg-input hover:text-red-primary"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -189,6 +226,9 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
                     done={false}
                     label="Finding the best match for you"
                   />
+                  <p className="text-center text-[10px] text-text-muted md:text-xs">
+                    This can take 30-60 seconds
+                  </p>
                 </div>
               )}
 
@@ -212,11 +252,10 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
         <div className="flex gap-2 border-t border-border-subtle px-4 py-3">
           <button
-            onClick={handleClose}
-            disabled={isLoading}
-            className="flex-1 rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary transition hover:bg-bg-input disabled:cursor-not-allowed disabled:opacity-40 md:text-sm"
+            onClick={isLoading ? cancelSearch : handleClose}
+            className="flex-1 rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary transition hover:bg-bg-input md:text-sm"
           >
-            Cancel
+            {isLoading ? "Cancel Search" : "Cancel"}
           </button>
           <button
             onClick={handleSearch}

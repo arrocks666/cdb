@@ -45,7 +45,6 @@ export default function AdminProductsPage() {
     fetchProducts();
   }, []);
 
-  // All unique categories present in products
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
@@ -54,16 +53,13 @@ export default function AdminProductsPage() {
     return Array.from(set).sort();
   }, [products]);
 
-  // Filter
   const visibleProducts = useMemo(() => {
     let list = products;
 
-    // category
     if (categoryFilter !== "all") {
       list = list.filter((p) => p.categoryId === categoryFilter);
     }
 
-    // status
     if (statusFilter === "flash") {
       list = list.filter((p) => p.isFlashSale === true);
     } else if (statusFilter === "trending") {
@@ -72,7 +68,6 @@ export default function AdminProductsPage() {
       list = list.filter((p) => p.inStock === false);
     }
 
-    // search
     const q = searchTerm.trim().toLowerCase();
     if (q) {
       list = list.filter((p) => p.title.toLowerCase().includes(q));
@@ -142,7 +137,6 @@ export default function AdminProductsPage() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-gold-primary/40 bg-gold-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gold-primary">
@@ -157,15 +151,22 @@ export default function AdminProductsPage() {
           </p>
         </div>
 
-        <Link
-          href="/admin-panel/products/new"
-          className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury"
-        >
-          + Add Product
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/admin-panel/products/refresh"
+            className="rounded-lg border-2 border-gold-primary bg-white px-4 py-2.5 text-sm font-semibold text-gold-primary transition hover:bg-bg-orange"
+          >
+            🔄 Refresh Products
+          </Link>
+          <Link
+            href="/admin-panel/products/new"
+            className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury"
+          >
+            + Add Product
+          </Link>
+        </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="Total" value={products.length} icon="📦" />
         <StatCard label="Flash Sale" value={flashCount} icon="⚡" />
@@ -173,7 +174,6 @@ export default function AdminProductsPage() {
         <StatCard label="Out of Stock" value={outOfStockCount} icon="🚫" />
       </div>
 
-      {/* Search + filters */}
       <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
         <div className="relative flex-1">
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
@@ -205,7 +205,6 @@ export default function AdminProductsPage() {
         </select>
       </div>
 
-      {/* Status tabs */}
       <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
         <StatusTab
           label="All"
@@ -240,7 +239,6 @@ export default function AdminProductsPage() {
         {visibleProducts.length === 1 ? "product" : "products"} shown
       </p>
 
-      {/* Product list */}
       <div className="mt-3 space-y-2">
         {loading ? (
           <div className="flex justify-center py-16">
@@ -393,7 +391,6 @@ function ProductRow({
           </div>
         </div>
 
-        {/* Toggles */}
         <div className="flex flex-wrap items-center gap-1.5 md:flex-shrink-0">
           <button
             onClick={onToggleFlash}
