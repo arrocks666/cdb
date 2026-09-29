@@ -1,11 +1,11 @@
 name: Daily Cleanup
 
 on:
-  # Run every day at 22:00 UTC = 4:00 AM Bangladesh time (next day)
+  # Run every day at 4 AM Bangladesh time
+  # 22:00 UTC = 4:00 AM BD (next day)
   schedule:
     - cron: "0 22 * * *"
 
-  # Allow manual trigger from GitHub UI
   workflow_dispatch:
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
@@ -48,7 +48,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Daily Cleanup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Daily Cleanup" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Date: $(date -u)" >> $GITHUB_STEP_SUMMARY
           echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

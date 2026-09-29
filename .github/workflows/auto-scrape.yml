@@ -1,28 +1,19 @@
 name: Weekly 1688 Scrape
 
 on:
-  # Run every Sunday at 21:00 UTC = Monday 3:00 AM Bangladesh time
-  # Note: cron uses UTC. BD is UTC+6, so 21:00 UTC Sunday = 3:00 AM Monday BD.
-  # To get Sunday 3 AM BD, we schedule Saturday 21:00 UTC.
+  # Run every Sunday at 3 AM Bangladesh time
+  # Bangladesh is UTC+6. Saturday 21:00 UTC = Sunday 3:00 AM BD.
   schedule:
     - cron: "0 21 * * 6"
 
-  # Allow manual trigger from GitHub UI
+  # Manual trigger from GitHub UI
   workflow_dispatch:
 
 jobs:
   scrape:
-    name: Scrape 1688 and Import to Firestore
+    name: Scrape and Import
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
-    # Retry up to 3 times if the job fails
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        attempt: [1, 2, 3]
-    continue-on-error: ${{ matrix.attempt < 3 }}
 
     steps:
       - name: Checkout code
@@ -31,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
@@ -76,8 +67,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## Weekly Scrape Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Weekly Scrape" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Date: $(date -u)" >> $GITHUB_STEP_SUMMARY
           echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Attempt: ${{ matrix.attempt }}" >> $GITHUB_STEP_SUMMARY
