@@ -1,6 +1,5 @@
 // lib/firestoreProducts.ts
 // Firestore CRUD for products
-// Replaces the local products.json file
 
 import {
   collection,
@@ -42,14 +41,10 @@ export type FirestoreProduct = {
   moq?: number;
   supplierName?: string;
   priceOriginalCny?: number;
-
-  // Admin controlled flags
   isLive?: boolean;
   isFlashSale?: boolean;
   isTrending?: boolean;
   isFeatured?: boolean;
-
-  // Metadata
   createdAt?: unknown;
   updatedAt?: unknown;
   views?: number;
@@ -57,39 +52,33 @@ export type FirestoreProduct = {
 
 const COLLECTION = "products";
 
-/**
- * Fetch all products from Firestore.
- * For 500+ products, you'd paginate. For now, fetch all and cache.
- */
 export async function getAllProducts(): Promise<FirestoreProduct[]> {
   try {
     const q = query(collection(db, COLLECTION));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as FirestoreProduct) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<FirestoreProduct, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching products:", err);
     return [];
   }
 }
 
-/**
- * Fetch a single product by ID.
- */
 export async function getProduct(id: string): Promise<FirestoreProduct | null> {
   try {
     const ref = doc(db, COLLECTION, id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
-    return { id: snap.id, ...(snap.data() as FirestoreProduct) };
+    const data = snap.data() as Omit<FirestoreProduct, "id">;
+    return { ...data, id: snap.id };
   } catch (err) {
     console.error("Error fetching product:", err);
     return null;
   }
 }
 
-/**
- * Fetch products in a given category.
- */
 export async function getProductsByCategory(
   categoryId: string
 ): Promise<FirestoreProduct[]> {
@@ -99,19 +88,17 @@ export async function getProductsByCategory(
       where("categoryId", "==", categoryId)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as FirestoreProduct) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<FirestoreProduct, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching category products:", err);
     return [];
   }
 }
 
-/**
- * Save (create or update) a product. Preserves createdAt if document exists.
- */
-export async function saveProduct(
-  product: FirestoreProduct
-): Promise<void> {
+export async function saveProduct(product: FirestoreProduct): Promise<void> {
   const ref = doc(db, COLLECTION, product.id);
   const existing = await getDoc(ref);
 
@@ -125,7 +112,6 @@ export async function saveProduct(
     data.views = product.views ?? 0;
   }
 
-  // Never overwrite createdAt on update
   if (existing.exists() && existing.data().createdAt) {
     data.createdAt = existing.data().createdAt;
   }
@@ -133,9 +119,6 @@ export async function saveProduct(
   await setDoc(ref, data, { merge: true });
 }
 
-/**
- * Update only specific fields.
- */
 export async function updateProductFields(
   id: string,
   fields: Partial<FirestoreProduct>
@@ -147,16 +130,10 @@ export async function updateProductFields(
   });
 }
 
-/**
- * Delete a product.
- */
 export async function deleteProduct(id: string): Promise<void> {
   await deleteDoc(doc(db, COLLECTION, id));
 }
 
-/**
- * Bulk import products. Uses batched writes (max 500 per batch).
- */
 export async function bulkImportProducts(
   products: FirestoreProduct[]
 ): Promise<{ imported: number; failed: number }> {
@@ -190,7 +167,6 @@ export async function bulkImportProducts(
 
     try {
       await batch.commit();
-      console.log(`Committed batch ${i / BATCH_SIZE + 1}`);
     } catch (err) {
       console.error(`Batch commit failed at index ${i}:`, err);
       failed += chunk.length;
@@ -201,9 +177,6 @@ export async function bulkImportProducts(
   return { imported, failed };
 }
 
-/**
- * Fetch products that are marked as flash sale or trending.
- */
 export async function getFlashSaleProducts(): Promise<FirestoreProduct[]> {
   try {
     const q = query(
@@ -212,7 +185,10 @@ export async function getFlashSaleProducts(): Promise<FirestoreProduct[]> {
       limit(20)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as FirestoreProduct) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<FirestoreProduct, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching flash sale:", err);
     return [];
@@ -227,16 +203,16 @@ export async function getTrendingProducts(): Promise<FirestoreProduct[]> {
       limit(50)
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as FirestoreProduct) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<FirestoreProduct, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching trending:", err);
     return [];
   }
 }
 
-/**
- * Fetch top N products by views.
- */
 export async function getTopViewedProducts(
   n: number = 10,
   onlyLive: boolean = false
@@ -251,22 +227,21 @@ export async function getTopViewedProducts(
 
     const q = query(collection(db, COLLECTION), ...constraints);
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as FirestoreProduct) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<FirestoreProduct, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching top viewed:", err);
     return [];
   }
 }
 
-/**
- * Find products by IDs.
- */
 export async function getProductsByIds(
   ids: string[]
 ): Promise<FirestoreProduct[]> {
   if (ids.length === 0) return [];
   try {
-    // Firestore "in" queries support up to 30 items
     const chunks: string[][] = [];
     for (let i = 0; i < ids.length; i += 30) {
       chunks.push(ids.slice(i, i + 30));
@@ -276,9 +251,10 @@ export async function getProductsByIds(
     for (const chunk of chunks) {
       const q = query(collection(db, COLLECTION), where("__name__", "in", chunk));
       const snap = await getDocs(q);
-      snap.docs.forEach((d) =>
-        allResults.push({ id: d.id, ...(d.data() as FirestoreProduct) })
-      );
+      snap.docs.forEach((d) => {
+        const data = d.data() as Omit<FirestoreProduct, "id">;
+        allResults.push({ ...data, id: d.id });
+      });
     }
 
     return allResults;

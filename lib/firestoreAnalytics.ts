@@ -7,11 +7,9 @@ import {
   doc,
   setDoc,
   getDocs,
-  deleteDoc,
   query,
   where,
   orderBy,
-  limit,
   serverTimestamp,
   writeBatch,
   increment,
@@ -22,10 +20,6 @@ import { db } from "./firebase";
 
 const VIEWS_COLLECTION = "product_views";
 const VISITORS_COLLECTION = "visitor_stats";
-
-// =============================================
-// HELPERS
-// =============================================
 
 function getMonthStart(): Date {
   const now = new Date();
@@ -40,19 +34,14 @@ function getTodayKey(): string {
   return `${y}-${m}-${d}`;
 }
 
-/**
- * Get or create an anonymous visitor ID stored in localStorage.
- * Changes monthly so old visitors don't accumulate.
- */
 export function getVisitorId(): string {
   if (typeof window === "undefined") return "server";
   const KEY = "cdb_visitor_id";
   const MONTH_KEY = "cdb_visitor_month";
 
-  const currentMonth = getTodayKey().slice(0, 7); // YYYY-MM
+  const currentMonth = getTodayKey().slice(0, 7);
   const storedMonth = localStorage.getItem(MONTH_KEY);
 
-  // Reset visitor ID every month
   if (storedMonth !== currentMonth) {
     const newId = `v_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     localStorage.setItem(KEY, newId);
@@ -68,10 +57,6 @@ export function getVisitorId(): string {
   return id;
 }
 
-// =============================================
-// PRODUCT VIEW TRACKING
-// =============================================
-
 export type ProductView = {
   id: string;
   productId: string;
@@ -82,10 +67,6 @@ export type ProductView = {
   createdAt: unknown;
 };
 
-/**
- * Track a view for a product. Called when user opens a product page.
- * Also increments the product's own `views` counter.
- */
 export async function trackProductView(
   productId: string,
   productTitle: string,
@@ -106,22 +87,17 @@ export async function trackProductView(
       createdAt: serverTimestamp(),
     });
 
-    // Increment product's view counter
     const productRef = doc(db, "products", productId);
     try {
       await updateDoc(productRef, { views: increment(1) });
     } catch {
-      // Product may not exist in Firestore (e.g., live product not yet saved)
-      // Not critical
+      // Product may not exist in Firestore
     }
   } catch (err) {
     console.error("Error tracking view:", err);
   }
 }
 
-/**
- * Fetch views for the current month, optionally filtered by isLive.
- */
 export async function getMonthlyViews(
   onlyLive?: boolean
 ): Promise<ProductView[]> {
@@ -138,17 +114,16 @@ export async function getMonthlyViews(
 
     const q = query(collection(db, VIEWS_COLLECTION), ...constraints);
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as ProductView) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<ProductView, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching monthly views:", err);
     return [];
   }
 }
 
-/**
- * Get top N viewed products for the current month.
- * Groups by productId and counts views.
- */
 export async function getTopViewedThisMonth(
   n: number = 10,
   onlyLive?: boolean
@@ -202,29 +177,20 @@ export async function getTopViewedThisMonth(
   }
 }
 
-// =============================================
-// VISITOR TRACKING
-// =============================================
-
 export type VisitorStat = {
-  id: string; // date key YYYY-MM-DD
+  id: string;
   date: string;
   count: number;
-  visitorIds: string[]; // unique visitor IDs for the day
+  visitorIds: string[];
   updatedAt: unknown;
 };
 
-/**
- * Track a visit. Called once per page load (usually in app shell).
- * Increments today's counter and records the visitor ID.
- */
 export async function trackVisit(): Promise<void> {
   try {
     const visitorId = getVisitorId();
     const today = getTodayKey();
     const ref = doc(db, VISITORS_COLLECTION, today);
 
-    // We'll read + write to merge visitor IDs
     const snapshot = await getDocs(
       query(collection(db, VISITORS_COLLECTION), where("__name__", "==", today))
     );
@@ -258,28 +224,25 @@ export async function trackVisit(): Promise<void> {
   }
 }
 
-/**
- * Get visitor stats for the current month.
- */
 export async function getMonthlyVisitors(): Promise<VisitorStat[]> {
   try {
-    const monthStart = getTodayKey().slice(0, 7); // YYYY-MM
+    const monthStart = getTodayKey().slice(0, 7);
     const q = query(
       collection(db, VISITORS_COLLECTION),
       where("date", ">=", `${monthStart}-01`),
       orderBy("date", "asc")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as VisitorStat) }));
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<VisitorStat, "id">;
+      return { ...data, id: d.id };
+    });
   } catch (err) {
     console.error("Error fetching monthly visitors:", err);
     return [];
   }
 }
 
-/**
- * Get today's visitor count.
- */
 export async function getTodayVisitors(): Promise<number> {
   try {
     const today = getTodayKey();
@@ -295,9 +258,6 @@ export async function getTodayVisitors(): Promise<number> {
   }
 }
 
-/**
- * Get total unique visitors this month (union of all visitorIds).
- */
 export async function getMonthlyUniqueVisitors(): Promise<number> {
   try {
     const stats = await getMonthlyVisitors();
@@ -312,15 +272,6 @@ export async function getMonthlyUniqueVisitors(): Promise<number> {
   }
 }
 
-// =============================================
-// MONTHLY CLEANUP — deletes old data
-// =============================================
-
-/**
- * Delete all product_views and visitor_stats older than the current month.
- * Called automatically on the 1st of each month via the analytics page loading,
- * or manually from the admin panel.
- */
 export async function cleanupOldAnalytics(): Promise<{
   deletedViews: number;
   deletedStats: number;
@@ -331,14 +282,12 @@ export async function cleanupOldAnalytics(): Promise<{
   try {
     const monthStart = Timestamp.fromDate(getMonthStart());
 
-    // Clean up views older than this month
     const oldViewsQuery = query(
       collection(db, VIEWS_COLLECTION),
       where("createdAt", "<", monthStart)
     );
     const oldViewsSnap = await getDocs(oldViewsQuery);
 
-    // Delete in batches of 400
     const viewDocs = oldViewsSnap.docs;
     for (let i = 0; i < viewDocs.length; i += 400) {
       const batch = writeBatch(db);
@@ -348,7 +297,6 @@ export async function cleanupOldAnalytics(): Promise<{
       deletedViews += chunk.length;
     }
 
-    // Clean up visitor stats older than this month
     const monthKey = getTodayKey().slice(0, 7);
     const oldStatsSnap = await getDocs(collection(db, VISITORS_COLLECTION));
     const oldStats = oldStatsSnap.docs.filter(
@@ -362,10 +310,6 @@ export async function cleanupOldAnalytics(): Promise<{
       await batch.commit();
       deletedStats += chunk.length;
     }
-
-    console.log(
-      `Cleanup: deleted ${deletedViews} views, ${deletedStats} visitor stats`
-    );
   } catch (err) {
     console.error("Cleanup error:", err);
   }
@@ -373,9 +317,6 @@ export async function cleanupOldAnalytics(): Promise<{
   return { deletedViews, deletedStats };
 }
 
-/**
- * Should cleanup run? Runs on the 1st-2nd of the month or if last cleanup was > 25 days ago.
- */
 export function shouldRunCleanup(): boolean {
   if (typeof window === "undefined") return false;
   const KEY = "cdb_last_cleanup";
