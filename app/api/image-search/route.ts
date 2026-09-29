@@ -24,22 +24,53 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(arrayBuffer).toString("base64");
     const dataUrl = `data:${file.type};base64,${base64}`;
 
-    console.log("Rehosting uploaded image...");
-    const hostedUrl = await rehostImage(dataUrl);
-    console.log("Hosted at:", hostedUrl);
+    let hostedUrl: string;
+    try {
+      console.log("Rehosting uploaded image...");
+      hostedUrl = await rehostImage(dataUrl);
+      console.log("Hosted at:", hostedUrl);
+    } catch (err: any) {
+      console.error("Rehost failed:", err);
+      return Response.json(
+        {
+          error:
+            "Failed to upload image. Please try again or use a different photo.",
+          products: [],
+        },
+        { status: 500 }
+      );
+    }
 
-    console.log("Searching 1688 by image...");
-    // Race against a 100-second timeout
-    const products = await Promise.race([
-      imageSearch1688(hostedUrl, 5),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Search timed out. Please try again.")),
-          100_000
-        )
-      ),
-    ]);
-    console.log(`Found ${products.length} matches`);
+    let products;
+    try {
+      console.log("Searching 1688 by image...");
+      products = await Promise.race([
+        imageSearch1688(hostedUrl, 5),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Search timed out. The product may not be in our database."
+                )
+              ),
+            90_000
+          )
+        ),
+      ]);
+      console.log(`Found ${products.length} matches`);
+    } catch (err: any) {
+      console.error("Search failed:", err);
+      return Response.json(
+        {
+          error:
+            err.message ||
+            "Could not find matching products. Try a clearer photo.",
+          products: [],
+        },
+        { status: 500 }
+      );
+    }
 
     return Response.json({
       products,

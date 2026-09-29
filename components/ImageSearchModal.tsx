@@ -17,6 +17,7 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -33,7 +34,6 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
     }
   }, [open, reset]);
 
-  // Actually cancel the in-flight request
   const cancelSearch = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
@@ -45,22 +45,17 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
   const handleClose = () => {
     if (stage === "uploading" || stage === "searching" || stage === "ranking") {
-      // Instead of silently refusing, prompt user
       if (!confirm("Cancel image search?")) return;
       cancelSearch();
     }
     onClose();
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
+  const processFile = (f: File) => {
     if (!f.type.startsWith("image/")) {
       setError("Please select an image file");
       return;
     }
-
     if (f.size > 5 * 1024 * 1024) {
       setError("Image must be under 5MB");
       return;
@@ -74,20 +69,25 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
     reader.readAsDataURL(f);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    processFile(f);
+    e.target.value = "";
+  };
+
   const handleSearch = async () => {
     if (!file) return;
 
     setError(null);
     setStage("uploading");
 
-    // Create new abort controller for this request
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Auto-timeout: abort after 90 seconds (Apify can be slow)
     const timeoutId = setTimeout(() => {
       controller.abort();
-      setError("Search timed out. Please try again or upload a different photo.");
+      setError("Search timed out. Please try again.");
       setStage("idle");
     }, 90000);
 
@@ -125,7 +125,6 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
       abortRef.current = null;
 
       if (err.name === "AbortError") {
-        // User cancelled — don't show error
         setStage("idle");
         return;
       }
@@ -178,6 +177,14 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+            disabled={isLoading}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
             capture="environment"
             onChange={handleFileSelect}
             className="hidden"
@@ -185,20 +192,37 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
           />
 
           {!preview ? (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border-subtle bg-bg-input py-12 transition hover:border-gold-primary hover:bg-bg-orange"
-            >
-              <div className="text-4xl">📷</div>
-              <div className="text-center">
-                <p className="text-sm font-semibold text-text-primary md:text-base">
-                  Upload a photo
-                </p>
-                <p className="mt-1 text-xs text-text-muted md:text-sm">
-                  Take a picture or choose from gallery
-                </p>
-              </div>
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex w-full flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border-subtle bg-bg-input py-8 transition hover:border-gold-primary hover:bg-bg-orange"
+              >
+                <div className="text-4xl">🖼️</div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-text-primary md:text-base">
+                    Choose from Gallery
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted md:text-sm">
+                    Pick a photo from your device
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex w-full flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border-subtle bg-bg-input py-8 transition hover:border-gold-primary hover:bg-bg-orange"
+              >
+                <div className="text-4xl">📷</div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-text-primary md:text-base">
+                    Take a Photo
+                  </p>
+                  <p className="mt-1 text-xs text-text-muted md:text-sm">
+                    Use your camera to capture the product
+                  </p>
+                </div>
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col items-center">
               <div className="relative w-full overflow-hidden rounded-lg border border-border-subtle bg-bg-input">
@@ -227,14 +251,17 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
                     label="Finding the best match for you"
                   />
                   <p className="text-center text-[10px] text-text-muted md:text-xs">
-                    This can take 30-60 seconds
+                    Matching from thousands of products...
                   </p>
                 </div>
               )}
 
               {!isLoading && (
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    setPreview(null);
+                    setFile(null);
+                  }}
                   className="mt-3 text-xs font-semibold text-gold-primary underline transition hover:text-gold-luxury md:text-sm"
                 >
                   Choose a different photo
