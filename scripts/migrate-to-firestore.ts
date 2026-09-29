@@ -1,24 +1,27 @@
 // scripts/migrate-to-firestore.ts
-// One-time script: reads data/products-1688.json and uploads all products to Firestore.
-// Run with: npx tsx scripts/migrate-to-firestore.ts
+// Import products from JSON to Firestore.
+// - Adds/updates lastSeenAt timestamp
+// - Deletes products with lastSeenAt > 30 days (unless flagged)
+// - Never touches orders, analytics
 //
-// Requirements:
-// - .env.local must have NEXT_PUBLIC_FIREBASE_* variables set
-// - Firestore rules must allow writes to /products (they do per our current rules)
+// Run: npx tsx scripts/migrate-to-firestore.ts
+
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 
 import * as fs from "fs";
 import * as path from "path";
-import * as dotenv from "dotenv";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
   doc,
   writeBatch,
   serverTimestamp,
-  getDoc,
+  collection,
+  getDocs,
+  query,
+  where,
 } from "firebase/firestore";
-
-dotenv.config({ path: ".env.local" });
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -29,53 +32,120 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error(
-    "Missing Firebase config. Make sure NEXT_PUBLIC_FIREBASE_* variables are set in .env.local"
-  );
-  process.exit(1);
-}
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+const BATCH_SIZE = 400;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PRODUCT_MAX_AGE_DAYS = 30;
+
 type JsonProduct = {
   id: string;
-  title: string;
-  subtitle?: string;
-  price: number;
-  oldPrice: number;
-  discount: number;
-  rating: number;
-  reviews: number;
-  image: string;
-  gallery: string[];
-  colors: { id: string; label: string; hex: string }[];
-  inStock: boolean;
-  stockCount: number;
-  features: { icon: string; label: string }[];
-  description: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  sourceUrl?: string;
-  moq?: number;
-  supplierName?: string;
-  priceOriginalCny?: number;
+  [key: string]: any;
 };
 
-const BATCH_SIZE = 400; // Firestore limit is 500; leave headroom
+async function importProducts(products: JsonProduct[]): Promise<{
+  imported: number;
+  failed: number;
+}> {
+  let imported = 0;
+  let failed = 0;
+
+  for (let i = 0; i < products.length; i += BATCH_SIZE) {
+    const chunk = products.slice(i, i + BATCH_SIZE);
+    const batch = writeBatch(db);
+
+    for (const product of chunk) {
+      try {
+        const ref = doc(db, "products", product.id);
+        batch.set(
+          ref,
+          {
+            ...product,
+            isLive: false,
+            // Preserve flags — set defaults only if not present
+            isFlashSale: product.isFlashSale ?? false,
+            isTrending: product.isTrending ?? false,
+            isFeatured: product.isFeatured ?? false,
+            views: product.views ?? 0,
+            lastSeenAt: Date.now(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        imported++;
+      } catch (err) {
+        console.error(`Failed to prepare product ${product.id}:`, err);
+        failed++;
+      }
+    }
+
+    try {
+      await batch.commit();
+      console.log(
+        `Batch ${Math.floor(i / BATCH_SIZE) + 1} committed (${chunk.length} products)`
+      );
+    } catch (err) {
+      console.error(`Batch commit failed at index ${i}:`, err);
+      failed += chunk.length;
+      imported -= chunk.length;
+    }
+  }
+
+  return { imported, failed };
+}
+
+/**
+ * Delete products where lastSeenAt > 30 days old
+ * AND they are not flagged (isFlashSale, isTrending, isFeatured)
+ */
+async function cleanupOldProducts(): Promise<{
+  deleted: number;
+  protected: number;
+}> {
+  const cutoff = Date.now() - PRODUCT_MAX_AGE_DAYS * DAY_MS;
+  let deleted = 0;
+  let protectedCount = 0;
+
+  const snap = await getDocs(collection(db, "products"));
+  const toDelete: string[] = [];
+
+  for (const docSnap of snap.docs) {
+    const d = docSnap.data();
+    const lastSeen = d.lastSeenAt ?? d.updatedAt?.toMillis?.() ?? 0;
+
+    // Never delete flagged products
+    if (d.isFlashSale || d.isTrending || d.isFeatured) {
+      protectedCount++;
+      continue;
+    }
+
+    // Delete if not seen in 30 days
+    if (lastSeen > 0 && lastSeen < cutoff) {
+      toDelete.push(docSnap.id);
+    }
+  }
+
+  // Delete in batches
+  for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
+    const chunk = toDelete.slice(i, i + BATCH_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => batch.delete(doc(db, "products", id)));
+    await batch.commit();
+    deleted += chunk.length;
+  }
+
+  return { deleted, protected: protectedCount };
+}
 
 async function main() {
   console.log("=== Firestore Migration ===\n");
 
-  // 1. Read JSON file
   const filePath = path.join(process.cwd(), "data", "products-1688.json");
 
   if (!fs.existsSync(filePath)) {
     console.error(`File not found: ${filePath}`);
-    console.error(
-      "Run the scraper first (npx tsx scripts/scrape-1688.ts) to generate products."
-    );
+    console.error("Run: npx tsx scripts/scrape-1688.ts");
     process.exit(1);
   }
 
@@ -89,93 +159,25 @@ async function main() {
     process.exit(1);
   }
 
-  // 2. Check which products already exist (to skip duplicates if we've run before)
-  console.log("Checking existing products in Firestore...");
-  let existingCount = 0;
-  const existingIds = new Set<string>();
+  // 1. Import / update products
+  console.log("Importing products...");
+  const result = await importProducts(products);
+  console.log(`\nImported/updated: ${result.imported}`);
+  console.log(`Failed: ${result.failed}\n`);
 
-  for (let i = 0; i < products.length; i += 100) {
-    const chunk = products.slice(i, i + 100);
-    const checks = await Promise.all(
-      chunk.map(async (p) => {
-        try {
-          const snap = await getDoc(doc(db, "products", p.id));
-          return snap.exists() ? p.id : null;
-        } catch {
-          return null;
-        }
-      })
-    );
-    checks.forEach((id) => {
-      if (id) {
-        existingCount++;
-        existingIds.add(id);
-      }
-    });
-  }
+  // 2. Cleanup old products
+  console.log(`Cleaning up products not seen in ${PRODUCT_MAX_AGE_DAYS} days...`);
+  const cleanup = await cleanupOldProducts();
+  console.log(`Deleted: ${cleanup.deleted}`);
+  console.log(`Protected (flagged): ${cleanup.protected}\n`);
 
-  console.log(`Already in Firestore: ${existingCount} products`);
-  console.log(`Will import: ${products.length - existingCount} products\n`);
-
-  if (products.length === existingCount) {
-    console.log("All products already migrated. Nothing to do.");
-    process.exit(0);
-  }
-
-  // 3. Import in batches
-  let imported = 0;
-  let failed = 0;
-
-  for (let i = 0; i < products.length; i += BATCH_SIZE) {
-    const chunk = products.slice(i, i + BATCH_SIZE).filter(
-      (p) => !existingIds.has(p.id)
-    );
-
-    if (chunk.length === 0) continue;
-
-    const batch = writeBatch(db);
-
-    for (const product of chunk) {
-      const ref = doc(db, "products", product.id);
-      batch.set(
-        ref,
-        {
-          ...product,
-          isLive: false,
-          isFlashSale: false,
-          isTrending: false,
-          isFeatured: false,
-          views: 0,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-
-    try {
-      await batch.commit();
-      imported += chunk.length;
-      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(products.length / BATCH_SIZE);
-      console.log(
-        `Batch ${batchNum}/${totalBatches} — imported ${chunk.length} products (total: ${imported})`
-      );
-    } catch (err: any) {
-      console.error(`Batch at index ${i} failed:`, err.message);
-      failed += chunk.length;
-    }
-  }
-
-  console.log("\n=== Migration Complete ===");
-  console.log(`Imported: ${imported}`);
-  console.log(`Skipped (already existed): ${existingCount}`);
-  console.log(`Failed: ${failed}`);
-
-  process.exit(0);
+  console.log("=== Migration Complete ===");
+  console.log(`Imported: ${result.imported}`);
+  console.log(`Deleted: ${cleanup.deleted}`);
+  console.log(`Failed: ${result.failed}`);
 }
 
 main().catch((err) => {
-  console.error("\nFatal error:", err);
+  console.error("Fatal:", err);
   process.exit(1);
 });
