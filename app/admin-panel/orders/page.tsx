@@ -17,6 +17,7 @@ import {
 
 type RangeKey = "today" | "week" | "month" | "all";
 type StatusFilter = OrderStatus | "all";
+type PaymentFilter = "all" | "paid" | "due";
 
 const RANGE_LABELS: Record<RangeKey, string> = {
   today: "Today",
@@ -31,6 +32,7 @@ export default function AdminOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [range, setRange] = useState<RangeKey>("today");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +49,6 @@ export default function AdminOrdersPage() {
     };
   }, []);
 
-  // Filtered by range
   const rangeOrders = useMemo(() => {
     const now = new Date();
     let cutoff = 0;
@@ -59,20 +60,43 @@ export default function AdminOrdersPage() {
     return orders.filter((o) => o.createdAt >= cutoff);
   }, [orders, range]);
 
-  // Then by search
   const searchedOrders = useMemo(
     () => searchOrders(rangeOrders, searchTerm),
     [rangeOrders, searchTerm]
   );
 
-  // Then by status
   const visibleOrders = useMemo(() => {
-    if (statusFilter === "all") return searchedOrders;
-    return searchedOrders.filter((o) => o.status === statusFilter);
-  }, [searchedOrders, statusFilter]);
+    let list = searchedOrders;
+
+    if (statusFilter !== "all") {
+      list = list.filter((o) => o.status === statusFilter);
+    }
+
+    if (paymentFilter === "paid") {
+      list = list.filter(
+        (o) => (o.paidAmount ?? o.total) >= o.total
+      );
+    } else if (paymentFilter === "due") {
+      list = list.filter(
+        (o) => (o.paidAmount ?? o.total) < o.total
+      );
+    }
+
+    return list;
+  }, [searchedOrders, statusFilter, paymentFilter]);
 
   const stats = computeStats(rangeOrders);
   const statusCounts = countByStatus(rangeOrders);
+
+  const paidCount = rangeOrders.filter(
+    (o) => (o.paidAmount ?? o.total) >= o.total
+  ).length;
+  const dueCount = rangeOrders.length - paidCount;
+
+  const totalDue = rangeOrders.reduce(
+    (sum, o) => sum + Math.max(0, o.total - (o.paidAmount ?? o.total)),
+    0
+  );
 
   return (
     <div>
@@ -103,35 +127,48 @@ export default function AdminOrdersPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Today"
-          revenue={computeStats(
-            orders.filter((o) => o.createdAt >= startOfDay())
-          ).revenue}
-          count={
-            orders.filter((o) => o.createdAt >= startOfDay()).length
-          }
+          revenue={computeStats(orders.filter((o) => o.createdAt >= startOfDay())).revenue}
+          count={orders.filter((o) => o.createdAt >= startOfDay()).length}
           icon="💰"
         />
         <StatCard
           label="This Week"
-          revenue={computeStats(
-            orders.filter((o) => o.createdAt >= startOfWeek())
-          ).revenue}
-          count={
-            orders.filter((o) => o.createdAt >= startOfWeek()).length
-          }
+          revenue={computeStats(orders.filter((o) => o.createdAt >= startOfWeek())).revenue}
+          count={orders.filter((o) => o.createdAt >= startOfWeek()).length}
           icon="📅"
         />
         <StatCard
           label="This Month"
-          revenue={computeStats(
-            orders.filter((o) => o.createdAt >= startOfMonth())
-          ).revenue}
-          count={
-            orders.filter((o) => o.createdAt >= startOfMonth()).length
-          }
+          revenue={computeStats(orders.filter((o) => o.createdAt >= startOfMonth())).revenue}
+          count={orders.filter((o) => o.createdAt >= startOfMonth()).length}
           icon="📈"
         />
       </div>
+
+      {/* Due amount summary */}
+      {dueCount > 0 && (
+        <div className="mt-4 rounded-lg border border-red-primary/30 bg-red-primary/5 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-primary/10 text-xl">
+                ⚠️
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-red-primary">
+                  Outstanding Due
+                </p>
+                <p className="mt-0.5 text-lg font-bold text-red-primary">
+                  {formatBDT(totalDue)}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-text-secondary md:text-sm">
+              from <span className="font-bold text-text-primary">{dueCount}</span>{" "}
+              {dueCount === 1 ? "order" : "orders"}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Search + range tabs */}
       <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -168,8 +205,30 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
+      {/* Payment filter tabs */}
+      <div className="mt-3 flex gap-1.5">
+        <PaymentTab
+          label="All Payments"
+          count={rangeOrders.length}
+          active={paymentFilter === "all"}
+          onClick={() => setPaymentFilter("all")}
+        />
+        <PaymentTab
+          label="✅ Paid"
+          count={paidCount}
+          active={paymentFilter === "paid"}
+          onClick={() => setPaymentFilter("paid")}
+        />
+        <PaymentTab
+          label="⏳ Due"
+          count={dueCount}
+          active={paymentFilter === "due"}
+          onClick={() => setPaymentFilter("due")}
+        />
+      </div>
+
       {/* Status tabs */}
-      <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
+      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
         <StatusTab
           label="All"
           count={rangeOrders.length}
@@ -235,27 +294,13 @@ export default function AdminOrdersPage() {
   );
 }
 
-function StatCard({
-  label,
-  revenue,
-  count,
-  icon,
-}: {
-  label: string;
-  revenue: number;
-  count: number;
-  icon: string;
-}) {
+function StatCard({ label, revenue, count, icon }: { label: string; revenue: number; count: number; icon: string }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-bold text-red-primary md:text-3xl">
-            {formatBDT(revenue)}
-          </p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">{label}</p>
+          <p className="mt-2 text-2xl font-bold text-red-primary md:text-3xl">{formatBDT(revenue)}</p>
           <p className="mt-1 text-[11px] text-text-muted">
             {count} {count === 1 ? "order" : "orders"}
           </p>
@@ -268,17 +313,7 @@ function StatCard({
   );
 }
 
-function StatusTab({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
+function PaymentTab({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -289,11 +324,25 @@ function StatusTab({
       }`}
     >
       {label}
-      <span
-        className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-          active ? "bg-white/20 text-white" : "bg-bg-input text-text-muted"
-        }`}
-      >
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-bg-input text-text-muted"}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function StatusTab({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        active
+          ? "border-gold-primary bg-gold-primary text-white"
+          : "border-border-subtle bg-white text-text-secondary hover:border-gold-primary hover:text-gold-primary"
+      }`}
+    >
+      {label}
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-bg-input text-text-muted"}`}>
         {count}
       </span>
     </button>
@@ -304,6 +353,10 @@ function OrderRow({ order }: { order: Order }) {
   const isManual = order.userId === "admin-manual";
   const itemCount = order.items.length;
   const firstItem = order.items[0];
+
+  const paidAmount = order.paidAmount ?? order.total;
+  const dueAmount = Math.max(0, order.total - paidAmount);
+  const isFullyPaid = dueAmount === 0;
 
   return (
     <Link
@@ -324,26 +377,29 @@ function OrderRow({ order }: { order: Order }) {
             <span className="rounded-full border border-gold-primary/40 bg-bg-orange px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-primary">
               {STATUS_LABELS[order.status]}
             </span>
+            {isFullyPaid ? (
+              <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-success">
+                ✅ Paid
+              </span>
+            ) : (
+              <span className="rounded-full bg-red-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-primary">
+                ⏳ Due {formatBDT(dueAmount)}
+              </span>
+            )}
           </div>
 
           <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[11px] text-text-secondary md:grid-cols-3 md:text-xs">
             <div>
               <span className="text-text-muted">Customer:</span>{" "}
-              <span className="font-medium text-text-primary">
-                {order.address?.name || "—"}
-              </span>
+              <span className="font-medium text-text-primary">{order.address?.name || "—"}</span>
             </div>
             <div>
               <span className="text-text-muted">Phone:</span>{" "}
-              <span className="font-medium text-text-primary">
-                {order.address?.phone || "—"}
-              </span>
+              <span className="font-medium text-text-primary">{order.address?.phone || "—"}</span>
             </div>
             <div>
               <span className="text-text-muted">Date:</span>{" "}
-              <span className="font-medium text-text-primary">
-                {formatDate(order.createdAt)}
-              </span>
+              <span className="font-medium text-text-primary">{formatDate(order.createdAt)}</span>
             </div>
           </div>
 
@@ -351,9 +407,7 @@ function OrderRow({ order }: { order: Order }) {
             <span>
               {itemCount} {itemCount === 1 ? "item" : "items"}
               {firstItem && firstItem.title
-                ? ` • ${firstItem.title.slice(0, 40)}${
-                    firstItem.title.length > 40 ? "…" : ""
-                  }`
+                ? ` • ${firstItem.title.slice(0, 40)}${firstItem.title.length > 40 ? "…" : ""}`
                 : ""}
             </span>
             {order.chinaOrderId && (
@@ -361,16 +415,24 @@ function OrderRow({ order }: { order: Order }) {
                 CN: {order.chinaOrderId}
               </span>
             )}
+            {order.transactionId && (
+              <span className="rounded bg-bg-input px-1.5 py-0.5 font-mono text-[10px] font-semibold text-text-secondary">
+                TXN: {order.transactionId}
+              </span>
+            )}
           </div>
         </div>
 
         <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wider text-text-muted">
-            Total
-          </p>
+          <p className="text-[10px] uppercase tracking-wider text-text-muted">Total</p>
           <p className="text-base font-bold text-red-primary md:text-lg">
             {formatBDT(order.total)}
           </p>
+          {!isFullyPaid && (
+            <p className="mt-1 text-[11px] text-text-muted md:text-xs">
+              Paid: <span className="font-semibold text-success">{formatBDT(paidAmount)}</span>
+            </p>
+          )}
           <span className="mt-1 inline-block text-[11px] font-medium text-gold-primary md:text-xs">
             View →
           </span>

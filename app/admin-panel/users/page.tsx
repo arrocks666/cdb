@@ -8,13 +8,14 @@ import {
   type AdminUser,
   type Coupon,
 } from "@/lib/coupons";
+import { formatBDT } from "@/lib/adminOrders";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [openGiveFor, setOpenGiveFor] = useState<string | null>(null);
-  const [percent, setPercent] = useState<number>(10);
+  const [amount, setAmount] = useState<number>(100);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -38,16 +39,16 @@ export default function AdminUsersPage() {
   };
 
   const handleGive = async (uid: string) => {
-    if (percent <= 0 || percent > 100) {
-      alert("Enter a valid percent (1-100)");
+    if (amount <= 0) {
+      alert("Enter a valid amount");
       return;
     }
     setSaving(true);
     try {
-      await giveCoupon(uid, percent);
-      showToast(`Coupon ${percent}% given!`);
+      await giveCoupon(uid, amount);
+      showToast(`Coupon ৳${amount} given!`);
       setOpenGiveFor(null);
-      setPercent(10);
+      setAmount(100);
       await loadUsers();
     } catch (err) {
       console.error(err);
@@ -82,7 +83,7 @@ export default function AdminUsersPage() {
           Manage Users
         </h1>
         <p className="mt-1 text-sm text-text-muted">
-          Give discount coupons to specific customers.
+          Give ৳ discount coupons to specific customers.
         </p>
       </div>
 
@@ -156,18 +157,17 @@ export default function AdminUsersPage() {
                 {isOpen && (
                   <div className="mt-4 border-t border-border-subtle pt-4">
                     <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                      Discount Percent
+                      Discount Amount (৳)
                     </label>
                     <div className="flex gap-2">
                       <input
                         type="number"
                         min={1}
-                        max={100}
-                        value={percent}
-                        onChange={(e) => setPercent(Number(e.target.value) || 0)}
+                        value={amount}
+                        onChange={(e) => setAmount(Number(e.target.value) || 0)}
                         className="w-32 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
                       />
-                      <span className="self-center text-sm text-text-muted">%</span>
+                      <span className="self-center text-sm text-text-muted">৳</span>
                       <button
                         onClick={() => handleGive(u.uid)}
                         disabled={saving}
@@ -194,7 +194,7 @@ export default function AdminUsersPage() {
                               {c.code}
                             </span>
                             <span className="text-text-primary">
-                              {c.percent}% off
+                              {formatBDT(c.amount)} OFF
                             </span>
                             <span className="text-text-muted">
                               exp {new Date(c.expiresAt).toLocaleDateString("en-GB")}

@@ -38,6 +38,7 @@ export type OrderItem = {
   costPrice?: number;
   title?: string;
   image?: string;
+  adminPhoto?: string;
   isLive?: boolean;
 };
 
@@ -62,6 +63,14 @@ export type Order = {
     address: string;
     district: string;
   };
+
+  // Payment tracking
+  transactionId?: string;
+  paidAmount?: number;
+  dueAmount?: number;
+  paymentScreenshots?: string[];
+
+  // Admin-only
   chinaOrderId?: string;
   adminNotes?: string;
   statusUpdatedAt?: unknown;
@@ -80,9 +89,6 @@ type OrderContextType = {
 
 const OrderContext = createContext<OrderContextType | null>(null);
 
-/**
- * Recursively strip `undefined` values so Firestore doesn't reject the write.
- */
 function stripUndefined<T>(obj: T): T {
   if (Array.isArray(obj)) {
     return obj.map((v) => stripUndefined(v)) as unknown as T;
@@ -98,19 +104,13 @@ function stripUndefined<T>(obj: T): T {
   return obj;
 }
 
-/**
- * Generate a 6-digit order ID like "482731".
- * Retries up to 5 times if the ID already exists.
- */
 async function generateUniqueOrderId(): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
-    // Random 6-digit number, no leading-zero issues
     const id = String(Math.floor(100000 + Math.random() * 900000));
     const ref = doc(db, "orders", id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return id;
   }
-  // Extremely unlikely fallback — append timestamp fragment
   return String(Date.now()).slice(-6);
 }
 
@@ -166,9 +166,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       throw new Error("Must be logged in to place an order");
     }
 
-    // 6-digit custom ID as the Firestore doc ID
     const orderId = await generateUniqueOrderId();
     const ref = doc(db, "orders", orderId);
+
+    const total = draft.total;
+    const paidAmount = draft.paidAmount ?? total;
+    const dueAmount = Math.max(0, total - paidAmount);
 
     const newOrder: Order = {
       ...draft,
@@ -177,6 +180,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       userPhone: user.phoneNumber ?? null,
       createdAt: Date.now(),
       status: "placed",
+      paidAmount,
+      dueAmount,
     };
 
     const clean = stripUndefined({
@@ -214,7 +219,6 @@ export function useOrders() {
   return ctx;
 }
 
-/* Status helpers — used by the Orders screens */
 export const STATUS_ORDER: OrderStatus[] = [
   "placed",
   "confirmed",

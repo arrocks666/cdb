@@ -15,6 +15,9 @@ export const categories = [
   { id: "more", name: "More", icon: "⋯" },
 ];
 
-export function formatBDT(amount: number): string {
-  return `৳${amount.toLocaleString("en-IN")}`;
+export function formatBDT(amount: number | undefined | null): string {
+  if (amount === undefined || amount === null || isNaN(Number(amount))) {
+    return "৳0";
+  }
+  return `৳${Number(amount).toLocaleString("en-IN")}`;
 }

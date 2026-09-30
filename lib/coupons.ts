@@ -1,4 +1,8 @@
 // lib/coupons.ts
+// Coupon system — Firestore helpers
+// Coupons are stored inside the user doc: users/{uid}.coupons[]
+// Admin gives them, user redeems at checkout.
+
 import {
   doc,
   getDoc,
@@ -10,15 +14,18 @@ import {
 import { db } from "./firebase";
 
 export type Coupon = {
-  code: string;
-  percent: number;
-  createdAt: number;
-  expiresAt: number;
+  code: string;          // "CDB-4F2A91"
+  amount: number;        // 100 = ৳100 off
+  createdAt: number;     // epoch ms
+  expiresAt: number;     // epoch ms
   used: boolean;
   usedAt?: number;
   orderId?: string;
 };
 
+/**
+ * Generate a unique coupon code like CDB-4F2A91.
+ */
 export function generateCouponCode(): string {
   const chars = "ABCDEF0123456789";
   let code = "CDB-";
@@ -28,15 +35,19 @@ export function generateCouponCode(): string {
   return code;
 }
 
+/**
+ * Give a coupon to a specific user.
+ * Returns the new coupon.
+ */
 export async function giveCoupon(
   uid: string,
-  percent: number,
+  amount: number,
   expiresInDays: number = 30
 ): Promise<Coupon> {
   const now = Date.now();
   const coupon: Coupon = {
     code: generateCouponCode(),
-    percent,
+    amount,
     createdAt: now,
     expiresAt: now + expiresInDays * 24 * 60 * 60 * 1000,
     used: false,
@@ -50,6 +61,9 @@ export async function giveCoupon(
   return coupon;
 }
 
+/**
+ * Read all coupons for a user.
+ */
 export async function getUserCoupons(uid: string): Promise<Coupon[]> {
   try {
     const ref = doc(db, "users", uid);
@@ -63,11 +77,17 @@ export async function getUserCoupons(uid: string): Promise<Coupon[]> {
   }
 }
 
+/**
+ * Return only valid (unused + not expired) coupons.
+ */
 export function filterValidCoupons(coupons: Coupon[]): Coupon[] {
   const now = Date.now();
   return coupons.filter((c) => !c.used && c.expiresAt > now);
 }
 
+/**
+ * Mark a coupon as used (vanish).
+ */
 export async function markCouponUsed(
   uid: string,
   coupon: Coupon,

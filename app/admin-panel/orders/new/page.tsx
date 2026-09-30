@@ -10,6 +10,7 @@ type ManualItem = {
   title: string;
   price: number;
   quantity: number;
+  image: string; // NEW: item photo URL
 };
 
 const PAYMENT_METHODS = [
@@ -22,7 +23,6 @@ const PAYMENT_METHODS = [
 async function generateUniqueOrderId(): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const id = String(Math.floor(100000 + Math.random() * 900000));
-    // no runtime check here — no duplicate risk in practice for manual orders
     return id;
   }
   return String(Date.now()).slice(-6);
@@ -38,10 +38,11 @@ export default function NewAdminOrderPage() {
   const [notes, setNotes] = useState("");
   const [shipping, setShipping] = useState(200);
   const [items, setItems] = useState<ManualItem[]>([
-    { title: "", price: 0, quantity: 1 },
+    { title: "", price: 0, quantity: 1, image: "" },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
   const subtotal = items.reduce(
     (sum, it) => sum + (it.price || 0) * (it.quantity || 0),
@@ -56,17 +57,55 @@ export default function NewAdminOrderPage() {
   };
 
   const addItem = () =>
-    setItems((prev) => [...prev, { title: "", price: 0, quantity: 1 }]);
+    setItems((prev) => [
+      ...prev,
+      { title: "", price: 0, quantity: 1, image: "" },
+    ]);
 
   const removeItem = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // NEW: Upload photo for a specific item
+  const handleUploadPhoto = async (
+    idx: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be under 5MB");
+      return;
+    }
+
+    setUploadingIndex(idx);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      updateItem(idx, { image: data.url });
+    } catch (err: any) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploadingIndex(null);
+      e.target.value = "";
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Validation
     if (!name.trim()) return setError("Customer name is required");
     if (!phone.trim()) return setError("Customer phone is required");
     if (!address.trim()) return setError("Address is required");
@@ -99,11 +138,14 @@ export default function NewAdminOrderPage() {
           quantity: it.quantity,
           price: it.price,
           title: it.title,
+          image: it.image || undefined, // ⚡ Save photo
           isLive: false,
         })),
         subtotal,
         shipping: shipping || 0,
         total,
+        paidAmount: total, // Admin-created = full payment default
+        dueAmount: 0,
         paymentMethod: paymentLabel,
         address: {
           name: name.trim(),
@@ -125,7 +167,6 @@ export default function NewAdminOrderPage() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
         <button
           onClick={() => router.push("/admin-panel/orders")}
@@ -197,16 +238,59 @@ export default function NewAdminOrderPage() {
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {items.map((item, idx) => (
               <div
                 key={idx}
                 className="rounded-lg border border-border-subtle bg-bg-input p-3"
               >
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
-                  <div className="md:col-span-6">
+                {/* Row 1: Photo + Name */}
+                <div className="flex gap-3">
+                  {/* Photo upload */}
+                  <div className="flex-shrink-0">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id={`item-photo-${idx}`}
+                      className="hidden"
+                      onChange={(e) => handleUploadPhoto(idx, e)}
+                      disabled={uploadingIndex === idx}
+                    />
+                    <label
+                      htmlFor={`item-photo-${idx}`}
+                      className={`flex h-20 w-20 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed transition ${
+                        item.image
+                          ? "border-success bg-white"
+                          : "border-border-subtle bg-white hover:border-gold-primary"
+                      }`}
+                    >
+                      {uploadingIndex === idx ? (
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+                      ) : item.image ? (
+                        <img
+                          src={item.image}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                          </svg>
+                          <span className="mt-1 text-[9px] text-text-muted">
+                            Photo
+                          </span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  {/* Name */}
+                  <div className="flex-1">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                      Product name
+                      Product name *
                     </label>
                     <input
                       type="text"
@@ -218,7 +302,11 @@ export default function NewAdminOrderPage() {
                       className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
                     />
                   </div>
-                  <div className="md:col-span-3">
+                </div>
+
+                {/* Row 2: Price, Qty, Remove */}
+                <div className="mt-3 grid grid-cols-12 gap-2">
+                  <div className="col-span-5">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
                       Price (৳)
                     </label>
@@ -227,13 +315,15 @@ export default function NewAdminOrderPage() {
                       min={0}
                       value={item.price || ""}
                       onChange={(e) =>
-                        updateItem(idx, { price: Number(e.target.value) || 0 })
+                        updateItem(idx, {
+                          price: Number(e.target.value) || 0,
+                        })
                       }
                       placeholder="0"
                       className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
                     />
                   </div>
-                  <div className="md:col-span-2">
+                  <div className="col-span-4">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
                       Qty
                     </label>
@@ -249,12 +339,12 @@ export default function NewAdminOrderPage() {
                       className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
                     />
                   </div>
-                  <div className="flex items-end md:col-span-1">
+                  <div className="col-span-3 flex items-end">
                     <button
                       type="button"
                       onClick={() => removeItem(idx)}
                       disabled={items.length === 1}
-                      className="flex h-9 w-9 items-center justify-center rounded border border-red-primary/30 text-red-primary transition hover:bg-red-primary hover:text-white disabled:opacity-30"
+                      className="flex h-9 w-full items-center justify-center rounded border border-red-primary/30 text-red-primary transition hover:bg-red-primary hover:text-white disabled:opacity-30"
                       aria-label="Remove"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

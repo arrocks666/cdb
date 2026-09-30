@@ -43,12 +43,13 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   const [addedFeedback, setAddedFeedback] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+  const [shippingMethod, setShippingMethod] = useState<"air" | "sea">("air");
+  const [showWeightDetails, setShowWeightDetails] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
   }, []);
 
-  // Track product view once per product per session
   useEffect(() => {
     if (!product) return;
     const KEY = `cdb_viewed_${product.id}`;
@@ -87,6 +88,20 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
   const currentImage = gallery[activeImage];
   const subtitle = product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
   const location = findLocation(product.features);
+
+  // Weight: use product.weight if present, else default
+  const weightKg = (product as any).weightKg ?? settings.defaultWeightKg;
+  const weightNum = quantity * weightKg;
+
+  // Shipping cost based on method
+  const shippingCost =
+    shippingMethod === "air"
+      ? Math.round(weightNum * settings.byAirRate1)
+      : Math.round(weightNum * settings.bySeaRate);
+
+  // Payment split
+  const payNowAmount = Math.round((product.price * quantity * settings.payNowPercent) / 100);
+  const payOnDeliveryAmount = product.price * quantity - payNowAmount;
 
   const handleAddToCart = () => {
     cart.add(product.id, selectedColorId, quantity);
@@ -174,14 +189,129 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
               </div>
             </div>
 
+            {/* SHIPPING METHOD SELECTOR */}
             <div className="mt-5">
-              <div className="mb-2 text-xs text-text-secondary md:text-sm">Quantity</div>
+              <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">Shipping Method</p>
+              <div className="grid grid-cols-2 gap-2">
+                {/* By Air */}
+                <button
+                  onClick={() => setShippingMethod("air")}
+                  className={`rounded-lg border-2 p-3 text-left transition ${
+                    shippingMethod === "air"
+                      ? "border-gold-primary bg-bg-orange"
+                      : "border-border-subtle bg-white hover:border-gold-primary/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">✈️</span>
+                    <span className="text-sm font-bold text-text-primary">By Air</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted">
+                    ৳{settings.byAirRate1} / ৳{settings.byAirRate2} Per Kg
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-text-primary">
+                    {settings.byAirDays} Days
+                  </p>
+                </button>
+
+                {/* By Sea */}
+                <button
+                  onClick={() => setShippingMethod("sea")}
+                  className={`rounded-lg border-2 p-3 text-left transition ${
+                    shippingMethod === "sea"
+                      ? "border-gold-primary bg-bg-orange"
+                      : "border-border-subtle bg-white hover:border-gold-primary/50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🚢</span>
+                    <span className="text-sm font-bold text-text-primary">By Sea</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted">
+                    ৳{settings.bySeaRate} / Kg থেকে শুরু
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-text-primary">
+                    {settings.bySeaDays} Days
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            {/* QUANTITY */}
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-xs font-bold text-text-primary md:text-sm">Quantity</span>
               <div className="inline-flex items-center rounded border border-border-subtle bg-white">
                 <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="flex h-9 w-9 items-center justify-center text-text-secondary transition hover:text-gold-primary">−</button>
                 <span className="w-10 text-center text-sm font-semibold tabular-nums text-text-primary">{quantity}</span>
                 <button onClick={() => setQuantity((q) => q + 1)} className="flex h-9 w-9 items-center justify-center text-text-secondary transition hover:text-gold-primary">+</button>
               </div>
             </div>
+
+            {/* PRICE BREAKDOWN */}
+            <div className="mt-4 space-y-2 border-t border-border-subtle pt-4 text-sm">
+              <div className="flex justify-between text-text-secondary">
+                <span>Product price</span>
+                <span className="font-medium text-text-primary">{formatBDT(product.price * quantity)}</span>
+              </div>
+
+              {/* Pay Now */}
+              <div className="flex justify-between text-text-secondary">
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded bg-bg-input px-1.5 py-0.5 text-[10px] font-bold">
+                    {settings.payNowPercent}%
+                  </span>
+                  Pay now
+                </span>
+                <span className="font-medium text-text-primary">{formatBDT(payNowAmount)}</span>
+              </div>
+
+              {/* Pay on Delivery */}
+              <div className="flex justify-between text-text-secondary">
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded bg-bg-input px-1.5 py-0.5 text-[10px] font-bold">
+                    {100 - settings.payNowPercent}%
+                  </span>
+                  Pay on delivery
+                </span>
+                <span className="font-medium text-text-primary">
+                  {formatBDT(payOnDeliveryAmount)} +
+                  <span className="text-[11px] text-text-muted"> Shipping + China Courier Charge</span>
+                </span>
+              </div>
+            </div>
+
+            {/* WEIGHT BOX */}
+            <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
+                  <span className="text-base">⚖️</span>
+                  Approximate weight: {weightNum.toFixed(1)}kg
+                </div>
+                <button
+                  onClick={() => setShowWeightDetails(!showWeightDetails)}
+                  className="text-[11px] font-medium text-gold-primary underline md:text-xs"
+                >
+                  বিস্তারিত
+                </button>
+              </div>
+
+              {showWeightDetails && (
+                <div className="mt-2 border-t border-red-primary/20 pt-2">
+                  <p className="text-sm font-bold text-text-primary">শিপিং চার্জ</p>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    ৳{shippingMethod === "air" ? settings.byAirRate1 : settings.bySeaRate} /{" "}
+                    {shippingMethod === "air" ? settings.byAirRate2 : "kg"} Per Kg
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* WARNING TEXT */}
+            {settings.shippingWarning && (
+              <p className="mt-3 text-[11px] leading-relaxed text-red-primary md:text-xs">
+                {settings.shippingWarning}
+              </p>
+            )}
 
             {addedFeedback && (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-xs text-success">

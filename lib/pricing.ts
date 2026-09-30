@@ -1,12 +1,11 @@
 // lib/pricing.ts
-// Auto-pricing logic: 1688 price (CNY) → USD → BDT → markup multiplier
-// Rates are stored in Firestore settings/general. Falls back to defaults.
+// Pricing logic. Multiplier comes from settings tiers.
 
 export type MarkupTier = {
-  min: number;      // min cost in BDT (inclusive)
-  max: number;      // max cost in BDT (exclusive), use Infinity for last
+  min: number;
+  max: number;
   multiplier: number;
-  label: string;
+  label?: string;
 };
 
 export type PricingConfig = {
@@ -16,6 +15,7 @@ export type PricingConfig = {
   roundingStep: number;
 };
 
+// Kept for backward compat with lib/firestoreSettings.ts imports
 export const DEFAULT_PRICING: PricingConfig = {
   cnyToUsd: 0.14,
   usdToBdt: 121,
@@ -28,10 +28,6 @@ export const DEFAULT_PRICING: PricingConfig = {
     { min: 10000, max: Infinity, multiplier: 1.12, label: "৳10,000+" },
   ],
 };
-
-// =============================================
-// CORE CONVERSIONS
-// =============================================
 
 export function cnyToCostBdt(
   priceCny: number,
@@ -86,17 +82,13 @@ export function computePrice(
     priceUsd,
     costBdt,
     markupMultiplier: tier.multiplier,
-    markupLabel: tier.label,
+    markupLabel: tier.label ?? `${tier.min}-${tier.max}`,
     sellingRaw,
     sellingBdt,
     profit,
     marginPercent,
   };
 }
-
-// =============================================
-// FORMATTING
-// =============================================
 
 export function formatBDTPrice(amount: number): string {
   return `৳${Math.round(amount).toLocaleString("en-IN")}`;

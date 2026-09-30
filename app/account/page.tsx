@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/AuthContext";
+import { formatBDT } from "@/lib/data";
 import {
   getSavedPayments,
   savePayments,
@@ -35,19 +36,16 @@ export default function AccountPage() {
 
   const [openSection, setOpenSection] = useState<string | null>(null);
 
-  // Payments
   const [payments, setPayments] = useState<SavedPayments>({});
   const [editingPayments, setEditingPayments] = useState(false);
   const [savingPayments, setSavingPayments] = useState(false);
   const [savePaymentMsg, setSavePaymentMsg] = useState<string | null>(null);
 
-  // Address
   const [address, setAddress] = useState<SavedAddress>({});
   const [editingAddress, setEditingAddress] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [saveAddressMsg, setSaveAddressMsg] = useState<string | null>(null);
 
-  // Coupons
   const [couponsList, setCouponsList] = useState<Coupon[]>([]);
   const [couponCount, setCouponCount] = useState(0);
 
@@ -359,7 +357,7 @@ export default function AccountPage() {
                                 {c.code}
                               </span>
                               <span className="font-semibold text-text-primary">
-                                {c.percent}% OFF
+                                {formatBDT(c.amount)} OFF
                               </span>
                               <span className="text-text-muted">
                                 Exp {new Date(c.expiresAt).toLocaleDateString("en-GB")}

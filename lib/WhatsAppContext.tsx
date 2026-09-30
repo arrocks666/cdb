@@ -50,7 +50,7 @@ export function WhatsAppProvider({ children }: { children: ReactNode }) {
   };
 
   const buildMessage = (productTitle: string, productUrl: string) => {
-    return `আই পণ্যটি কেনার জন্য বিস্তারিত জানতে চাই।\n\n${productTitle}\n\n${productUrl}`;
+    return `এই পণ্যটি কেনার জন্য বিস্তারিত জানতে চাই।\n\n${productTitle}\n\n${productUrl}`;
   };
 
   const openWhatsApp = (productTitle: string, productUrl: string) => {

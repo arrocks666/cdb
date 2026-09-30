@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useProducts } from "@/lib/ProductsContext";
 import ProductCard from "@/components/ProductCard";
 import LiveProductCard from "@/components/LiveProductCard";
-import { LiveProduct } from "@/lib/live-search";
+import { categories } from "@/lib/categories";
 
 function SkeletonCard() {
   return (
@@ -19,17 +19,6 @@ function SkeletonCard() {
           <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
         </div>
         <div className="relative mt-1.5 h-3 w-3/4 overflow-hidden rounded bg-bg-input">
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </div>
-        <div className="relative mt-2 h-2.5 w-1/2 overflow-hidden rounded bg-bg-input">
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </div>
-        <div className="relative mt-2 h-4 w-2/5 overflow-hidden rounded bg-bg-input">
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </div>
-      </div>
-      <div className="px-2.5 pb-2.5 md:px-3 md:pb-3">
-        <div className="relative h-8 w-full overflow-hidden rounded-lg bg-bg-input">
           <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
         </div>
       </div>
@@ -47,27 +36,8 @@ function SearchContent() {
 
   const [query, setQuery] = useState(urlQuery);
   const [submittedQuery, setSubmittedQuery] = useState(urlQuery);
-  const [liveProducts, setLiveProducts] = useState<LiveProduct[]>([]);
-  const [loadingLive, setLoadingLive] = useState(false);
-  const searchIdRef = useRef(0);
-
-  // Image search results
-  const [imageResults, setImageResults] = useState<LiveProduct[]>([]);
-
-  // Load image search results from sessionStorage
-  useEffect(() => {
-    if (isImageSearch) {
-      try {
-        const raw = sessionStorage.getItem("image_search_results");
-        if (raw) {
-          const parsed = JSON.parse(raw) as LiveProduct[];
-          setImageResults(parsed.slice(0, 5)); // ensure max 5
-        }
-      } catch (err) {
-        console.error("Failed to load image results:", err);
-      }
-    }
-  }, [isImageSearch]);
+  const [imageResults, setImageResults] = useState<any[]>([]);
+  const [needsCategoryPick, setNeedsCategoryPick] = useState(false);
 
   // Sync input when URL changes externally
   useEffect(() => {
@@ -75,7 +45,22 @@ function SearchContent() {
     setSubmittedQuery(urlQuery);
   }, [urlQuery]);
 
-  // Local filtered results
+  // Load image search results from sessionStorage
+  useEffect(() => {
+    if (isImageSearch) {
+      try {
+        const raw = sessionStorage.getItem("image_search_results");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setImageResults(parsed);
+        }
+      } catch (err) {
+        console.error("Failed to load image results:", err);
+      }
+    }
+  }, [isImageSearch]);
+
+  // Local filtered results — instant from Firestore
   const localResults = useMemo(() => {
     const q = submittedQuery.trim().toLowerCase();
     if (!q) return [];
@@ -86,44 +71,6 @@ function SearchContent() {
     );
   }, [submittedQuery, products]);
 
-  // Live search on submit (skip if this is image search)
-  useEffect(() => {
-    if (isImageSearch) return;
-
-    const q = submittedQuery.trim();
-
-    if (q.length < 2) {
-      setLiveProducts([]);
-      setLoadingLive(false);
-      return;
-    }
-
-    // If we have 3+ local results, don't hit Apify
-    if (localResults.length >= 3) {
-      setLiveProducts([]);
-      setLoadingLive(false);
-      return;
-    }
-
-    const myId = ++searchIdRef.current;
-    setLoadingLive(true);
-    setLiveProducts([]);
-
-    (async () => {
-      try {
-        const res = await fetch(`/api/live-search?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (myId !== searchIdRef.current) return;
-        setLiveProducts((data.products ?? []).slice(0, 5));
-      } catch (err) {
-        console.error("Live search failed:", err);
-        if (myId === searchIdRef.current) setLiveProducts([]);
-      } finally {
-        if (myId === searchIdRef.current) setLoadingLive(false);
-      }
-    })();
-  }, [submittedQuery, localResults.length, isImageSearch]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = query.trim();
@@ -133,7 +80,6 @@ function SearchContent() {
   };
 
   const hasLocalResults = localResults.length > 0;
-  const hasLiveResults = liveProducts.length > 0;
   const hasImageResults = imageResults.length > 0;
   const hasSubmitted = submittedQuery.trim().length >= 2;
 
@@ -143,13 +89,9 @@ function SearchContent() {
     query.trim().toLowerCase() !== submittedQuery.trim().toLowerCase();
 
   const isEmpty =
+    !isImageSearch &&
     hasSubmitted &&
-    !hasLocalResults &&
-    !hasLiveResults &&
-    !loadingLive &&
-    !isImageSearch;
-
-  const totalCount = localResults.length + liveProducts.length;
+    !hasLocalResults;
 
   return (
     <div className="min-h-screen bg-bg-secondary">
@@ -157,10 +99,6 @@ function SearchContent() {
         @keyframes shimmer {
           0% { transform: translateX(-100%); }
           100% { transform: translateX(100%); }
-        }
-        @keyframes liveDot {
-          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-          40% { opacity: 1; transform: scale(1); }
         }
       `}</style>
 
@@ -249,7 +187,7 @@ function SearchContent() {
 
             {hasImageResults ? (
               <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
-                {imageResults.map((p) => (
+                {imageResults.map((p: any) => (
                   <LiveProductCard key={p.id} product={p} />
                 ))}
               </div>
@@ -260,45 +198,34 @@ function SearchContent() {
                   No matches found
                 </h3>
                 <p className="mt-1 max-w-xs text-xs text-text-muted">
-                  Try a clearer photo with the product centered
+                  Try a clearer photo or pick a category below
                 </p>
+                <button
+                  onClick={() => setNeedsCategoryPick(true)}
+                  className="mt-5 rounded-full bg-gold-primary px-6 py-2.5 text-xs font-semibold text-white shadow-orange-glow"
+                >
+                  Pick a Category
+                </button>
               </div>
             )}
           </>
         )}
 
         {/* LIVE SEARCH HINT */}
-        {!isImageSearch && showHitSearchHint && !loadingLive && (
+        {!isImageSearch && showHitSearchHint && (
           <div className="mb-4 flex flex-col items-center justify-center rounded-lg border border-dashed border-border-subtle bg-white py-8 text-center">
             <div className="text-4xl opacity-60">🔍</div>
             <p className="mt-3 text-sm font-medium text-text-primary md:text-base">
               Press <span className="font-bold text-gold-primary">Search</span> to find "{query}"
             </p>
-            <p className="mt-1 text-xs text-text-muted md:text-sm">
-              We'll look through thousands of products
-            </p>
-          </div>
-        )}
-
-        {/* LIVE SEARCH LOADING */}
-        {!isImageSearch && loadingLive && (
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-gold-primary" style={{ animation: "liveDot 1.4s infinite ease-in-out" }} />
-              <span className="h-2 w-2 rounded-full bg-gold-primary" style={{ animation: "liveDot 1.4s infinite ease-in-out", animationDelay: "0.2s" }} />
-              <span className="h-2 w-2 rounded-full bg-gold-primary" style={{ animation: "liveDot 1.4s infinite ease-in-out", animationDelay: "0.4s" }} />
-            </div>
-            <span className="text-xs font-medium text-text-secondary md:text-sm">
-              Finding products...
-            </span>
           </div>
         )}
 
         {/* RESULTS COUNT */}
-        {!isImageSearch && hasSubmitted && !loadingLive && totalCount > 0 && (
+        {!isImageSearch && hasSubmitted && (
           <p className="mb-3 text-xs text-text-secondary md:text-sm">
-            Showing <span className="font-bold text-gold-primary">{totalCount}</span>{" "}
-            {totalCount === 1 ? "result" : "results"} for{" "}
+            Showing <span className="font-bold text-gold-primary">{localResults.length}</span>{" "}
+            {localResults.length === 1 ? "result" : "results"} for{" "}
             <span className="font-semibold text-text-primary">"{submittedQuery}"</span>
           </p>
         )}
@@ -312,38 +239,15 @@ function SearchContent() {
           </div>
         )}
 
-        {/* LIVE RESULTS + 5 SKELETONS */}
-        {!isImageSearch && hasSubmitted && (
-          <>
-            {loadingLive && liveProducts.length === 0 && (
-              <div className={hasLocalResults ? "mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5" : "grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5"}>
-                <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
-              </div>
-            )}
-
-            {hasLiveResults && (
-              <div className={hasLocalResults ? "mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5" : "grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5"}>
-                {liveProducts.map((p) => (
-                  <LiveProductCard key={p.id} product={p} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
         {/* EMPTY */}
         {isEmpty && (
           <div className="mt-16 flex flex-col items-center text-center">
             <div className="text-6xl opacity-40">🔍</div>
             <h3 className="mt-4 text-lg font-bold text-text-primary">
-              No results found
+              No products found
             </h3>
             <p className="mt-1 max-w-xs text-xs text-text-muted">
-              We couldn't find anything for "{submittedQuery}". Try a different keyword.
+              We don't have "{submittedQuery}" in our store yet. Try a different keyword.
             </p>
             <button
               onClick={() => {
@@ -371,6 +275,54 @@ function SearchContent() {
           </div>
         )}
       </div>
+
+      {/* CATEGORY PICKER MODAL */}
+      {needsCategoryPick && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setNeedsCategoryPick(false)}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-border-subtle px-4 py-3">
+              <h3 className="text-base font-bold text-text-primary">
+                What are you looking for?
+              </h3>
+              <p className="mt-0.5 text-xs text-text-muted">
+                Pick a category to see similar items
+              </p>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto p-3">
+              <div className="grid grid-cols-2 gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      sessionStorage.removeItem("image_search_results");
+                      setNeedsCategoryPick(false);
+                      router.push(`/categories/${cat.id}`);
+                    }}
+                    className="flex items-center gap-2 rounded-lg border border-border-subtle bg-white p-3 text-left text-xs font-medium text-text-primary transition hover:border-gold-primary hover:bg-bg-orange md:text-sm"
+                  >
+                    <span className="text-lg">{cat.icon}</span>
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-border-subtle p-3">
+              <button
+                onClick={() => setNeedsCategoryPick(false)}
+                className="w-full rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,13 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { DEFAULT_PRICING, type PricingConfig } from "./pricing";
+
+export type MarkupTier = {
+  id: string;         // unique ID for React keys
+  min: number;        // min cost in BDT
+  max: number;        // max cost in BDT (use 999999 for last tier)
+  multiplier: number; // e.g. 1.50
+};
 
 export type StoreSettings = {
   cnyToUsd: number;
@@ -22,8 +28,45 @@ export type StoreSettings = {
   whatsappNumber: string;
   whatsappNumber2: string;
 
+  // Shipping method
+  byAirRate1: number;
+  byAirRate2: number;
+  byAirDays: string;
+  bySeaRate: number;
+  bySeaDays: string;
+
+  // NEW: Shipping visibility
+  showByAirOnProductPage: boolean;
+  showBySeaOnProductPage: boolean;
+
+  // Payment split
+  payNowPercent: number;
+  defaultWeightKg: number;
+  shippingWarning: string;
+
+  // Payment numbers
+  bkashNumber: string;
+  nagadNumber: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
+
+  // NEW: Logo
+  logoUrl: string;
+
+  // NEW: Markup tiers
+  markupTiers: MarkupTier[];
+
   updatedAt?: unknown;
 };
+
+export const DEFAULT_MARKUP_TIERS: MarkupTier[] = [
+  { id: "tier-1", min: 0,     max: 500,      multiplier: 1.50 },
+  { id: "tier-2", min: 500,   max: 2000,     multiplier: 1.35 },
+  { id: "tier-3", min: 2000,  max: 5000,     multiplier: 1.25 },
+  { id: "tier-4", min: 5000,  max: 10000,    multiplier: 1.18 },
+  { id: "tier-5", min: 10000, max: 99999999, multiplier: 1.12 },
+];
 
 export const DEFAULT_SETTINGS: StoreSettings = {
   cnyToUsd: 0.14,
@@ -41,6 +84,30 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   contactAddress: "Dhaka, Bangladesh",
   whatsappNumber: "8801689768307",
   whatsappNumber2: "8619822310841",
+
+  byAirRate1: 770,
+  byAirRate2: 1170,
+  byAirDays: "12 - 20",
+  bySeaRate: 120,
+  bySeaDays: "30 - 45",
+
+  showByAirOnProductPage: true,
+  showBySeaOnProductPage: true,
+
+  payNowPercent: 70,
+  defaultWeightKg: 0.5,
+  shippingWarning:
+    "উল্লেখিত পণ্যের ওজন সঠিক নয়, আনুমানিক মাত্র। বাংলাদেশে আসার পর পণ্যের প্রকৃত ওজন মেপে শিপিং চার্জ হিসাব করা হবে।",
+
+  bkashNumber: "01711-111111",
+  nagadNumber: "01811-111111",
+  bankName: "Dutch Bangla Bank",
+  bankAccountNumber: "1234567890123",
+  bankAccountHolder: "ChinaDailyBazar",
+
+  logoUrl: "", // empty = use default "买"
+
+  markupTiers: DEFAULT_MARKUP_TIERS,
 };
 
 const SETTINGS_DOC = ["settings", "general"] as const;
@@ -58,6 +125,7 @@ export async function loadSettings(): Promise<StoreSettings> {
     return {
       ...DEFAULT_SETTINGS,
       ...data,
+      markupTiers: data.markupTiers ?? DEFAULT_MARKUP_TIERS,
     };
   } catch (err) {
     console.error("Error loading settings:", err);
@@ -79,10 +147,18 @@ export async function saveSettings(
   );
 }
 
-export function settingsToPricing(settings: StoreSettings): PricingConfig {
-  return {
-    ...DEFAULT_PRICING,
-    cnyToUsd: settings.cnyToUsd,
-    usdToBdt: settings.usdToBdt,
-  };
+/**
+ * Find the multiplier for a given cost in BDT.
+ */
+export function findMarkupMultiplier(
+  costBdt: number,
+  tiers: MarkupTier[]
+): number {
+  for (const tier of tiers) {
+    if (costBdt >= tier.min && costBdt < tier.max) {
+      return tier.multiplier;
+    }
+  }
+  // Fallback: last tier
+  return tiers[tiers.length - 1]?.multiplier ?? 1.10;
 }

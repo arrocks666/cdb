@@ -21,6 +21,7 @@ export const categories: Category[] = [
       { id: "dresses", name: "Dresses", keyword: "women dress", categoryId: "womens-fashion" },
       { id: "womens-tshirt", name: "T-Shirts", keyword: "women t-shirt", categoryId: "womens-fashion" },
       { id: "tops", name: "Tops", keyword: "women top", categoryId: "womens-fashion" },
+      { id: "sarees", name: "Sarees", keyword: "women saree", categoryId: "womens-fashion" },
     ],
   },
   {
@@ -41,6 +42,7 @@ export const categories: Category[] = [
       { id: "womens-shoes", name: "Women's Shoes", keyword: "women shoes", categoryId: "shoes" },
       { id: "mens-shoes", name: "Men's Shoes", keyword: "men shoes", categoryId: "shoes" },
       { id: "sneakers", name: "Sneakers", keyword: "sneakers", categoryId: "shoes" },
+      { id: "sandals", name: "Sandals", keyword: "women sandals", categoryId: "shoes" },
     ],
   },
   {
@@ -60,7 +62,7 @@ export const categories: Category[] = [
     subcategories: [
       { id: "phone-cases", name: "Phone Cases", keyword: "phone case", categoryId: "mobile" },
       { id: "chargers", name: "Chargers & Cables", keyword: "phone charger", categoryId: "mobile" },
-      { id: "earphones", name: "Earphones", keyword: "earphone", categoryId: "mobile" },
+      { id: "earphones", name: "Earphones", keyword: "tws earbuds", categoryId: "mobile" },
     ],
   },
   {

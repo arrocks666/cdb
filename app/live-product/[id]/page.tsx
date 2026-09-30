@@ -10,9 +10,15 @@ import { useWhatsApp } from "@/lib/WhatsAppContext";
 import { useLiveProducts } from "@/lib/LiveProductContext";
 import { LiveProduct } from "@/lib/live-search";
 import { hasChinese, translateLocation } from "@/lib/chinaLocations";
-import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
-function findLocation(features?: { icon: string; label: string }[]): string | null {
+function findLocation(
+  features?: { icon: string; label: string }[]
+): string | null {
   if (!features) return null;
   for (const f of features) {
     if (!f.label) continue;
@@ -42,6 +48,8 @@ export default function LiveProductPage({
   const [addedFeedback, setAddedFeedback] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+  const [shippingMethod, setShippingMethod] = useState<"air" | "sea">("air");
+  const [showWeightDetails, setShowWeightDetails] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
@@ -57,7 +65,9 @@ export default function LiveProductPage({
     return (
       <div className="min-h-screen bg-bg-secondary">
         <div className="mx-auto max-w-7xl px-4 py-20 text-center">
-          <h1 className="text-2xl font-bold text-text-primary">Product not found</h1>
+          <h1 className="text-2xl font-bold text-text-primary">
+            Product not found
+          </h1>
           <p className="mt-2 text-sm text-text-muted">
             This product was from a live search. Please search again.
           </p>
@@ -87,6 +97,21 @@ export default function LiveProductPage({
 
   const subtitle =
     product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
+
+  // Weight & shipping calculation
+  const weightKg = settings.defaultWeightKg || 0.5;
+  const weightNum = quantity * weightKg;
+
+  const shippingCost =
+    shippingMethod === "air"
+      ? Math.round(weightNum * settings.byAirRate1)
+      : Math.round(weightNum * settings.bySeaRate);
+
+  // Payment split
+  const payNowAmount = Math.round(
+    (product.price * quantity * settings.payNowPercent) / 100
+  );
+  const payOnDeliveryAmount = product.price * quantity - payNowAmount;
 
   const handleAddToCart = () => {
     cart.addLive(
@@ -153,7 +178,16 @@ export default function LiveProductPage({
           onClick={() => router.back()}
           className="flex h-9 w-9 items-center justify-center text-text-primary transition hover:text-gold-primary"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
@@ -166,7 +200,16 @@ export default function LiveProductPage({
               : "text-text-muted hover:text-red-primary"
           }`}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill={inWishlist ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </button>
@@ -209,7 +252,16 @@ export default function LiveProductPage({
 
             {location && (
               <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-gold-primary/40 bg-bg-orange px-4 py-2.5 text-sm font-semibold text-gold-primary md:text-base">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                   <circle cx="12" cy="10" r="3" />
                 </svg>
@@ -252,10 +304,67 @@ export default function LiveProductPage({
               </div>
             </div>
 
+            {/* SHIPPING METHOD SELECTOR */}
             <div className="mt-5">
-              <div className="mb-2 text-xs text-text-secondary md:text-sm">
-                Quantity
+              <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
+                Shipping Method
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {settings.showByAirOnProductPage && (
+                  <button
+                    onClick={() => setShippingMethod("air")}
+                    className={`rounded-lg border-2 p-3 text-left transition ${
+                      shippingMethod === "air"
+                        ? "border-gold-primary bg-bg-orange"
+                        : "border-border-subtle bg-white hover:border-gold-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">✈️</span>
+                      <span className="text-sm font-bold text-text-primary">
+                        By Air
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-text-muted">
+                      ৳{settings.byAirRate1} / ৳{settings.byAirRate2} Per Kg
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-text-primary">
+                      {settings.byAirDays} Days
+                    </p>
+                  </button>
+                )}
+
+                {settings.showBySeaOnProductPage && (
+                  <button
+                    onClick={() => setShippingMethod("sea")}
+                    className={`rounded-lg border-2 p-3 text-left transition ${
+                      shippingMethod === "sea"
+                        ? "border-gold-primary bg-bg-orange"
+                        : "border-border-subtle bg-white hover:border-gold-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🚢</span>
+                      <span className="text-sm font-bold text-text-primary">
+                        By Sea
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-text-muted">
+                      ৳{settings.bySeaRate} / Kg থেকে শুরু
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-text-primary">
+                      {settings.bySeaDays} Days
+                    </p>
+                  </button>
+                )}
               </div>
+            </div>
+
+            {/* QUANTITY */}
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-xs font-bold text-text-primary md:text-sm">
+                Quantity
+              </span>
               <div className="inline-flex items-center rounded border border-border-subtle bg-white">
                 <button
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -275,9 +384,96 @@ export default function LiveProductPage({
               </div>
             </div>
 
+            {/* PRICE BREAKDOWN */}
+            <div className="mt-4 space-y-2 border-t border-border-subtle pt-4 text-sm">
+              <div className="flex justify-between text-text-secondary">
+                <span>Product price</span>
+                <span className="font-medium text-text-primary">
+                  {formatBDT(product.price * quantity)}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-text-secondary">
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded bg-bg-input px-1.5 py-0.5 text-[10px] font-bold">
+                    {settings.payNowPercent}%
+                  </span>
+                  Pay now
+                </span>
+                <span className="font-medium text-text-primary">
+                  {formatBDT(payNowAmount)}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-text-secondary">
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded bg-bg-input px-1.5 py-0.5 text-[10px] font-bold">
+                    {100 - settings.payNowPercent}%
+                  </span>
+                  Pay on delivery
+                </span>
+                <span className="font-medium text-text-primary">
+                  {formatBDT(payOnDeliveryAmount)} +
+                  <span className="text-[11px] text-text-muted">
+                    {" "}
+                    Shipping + China Courier Charge
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* WEIGHT BOX */}
+            <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
+                  <span className="text-base">⚖️</span>
+                  Approximate weight: {weightNum.toFixed(1)}kg
+                </div>
+                <button
+                  onClick={() => setShowWeightDetails(!showWeightDetails)}
+                  className="text-[11px] font-medium text-gold-primary underline md:text-xs"
+                >
+                  বিস্তারিত
+                </button>
+              </div>
+
+              {showWeightDetails && (
+                <div className="mt-2 border-t border-red-primary/20 pt-2">
+                  <p className="text-sm font-bold text-text-primary">
+                    শিপিং চার্জ
+                  </p>
+                  <p className="mt-0.5 text-xs text-text-secondary">
+                    ৳
+                    {shippingMethod === "air"
+                      ? settings.byAirRate1
+                      : settings.bySeaRate}{" "}
+                    /{" "}
+                    {shippingMethod === "air" ? settings.byAirRate2 : "kg"} Per
+                    Kg
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* WARNING TEXT */}
+            {settings.shippingWarning && (
+              <p className="mt-3 text-[11px] leading-relaxed text-red-primary md:text-xs">
+                {settings.shippingWarning}
+              </p>
+            )}
+
             {addedFeedback && (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-xs text-success">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
                 Added to cart!
@@ -289,7 +485,16 @@ export default function LiveProductPage({
                 onClick={handleAddToCart}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gold-primary bg-white py-3 text-sm font-semibold text-gold-primary transition hover:bg-bg-orange"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="9" cy="21" r="1" />
                   <circle cx="20" cy="21" r="1" />
                   <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
@@ -315,7 +520,6 @@ export default function LiveProductPage({
               Order via WhatsApp
             </button>
 
-            {/* Description */}
             {product.description && !hasChinese(product.description) && (
               <div className="mt-6 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
@@ -327,7 +531,6 @@ export default function LiveProductPage({
               </div>
             )}
 
-            {/* How to Order */}
             {settings.howToOrder && (
               <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
@@ -339,7 +542,6 @@ export default function LiveProductPage({
               </div>
             )}
 
-            {/* Delivery Info */}
             {settings.deliveryInfo && (
               <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
@@ -351,7 +553,6 @@ export default function LiveProductPage({
               </div>
             )}
 
-            {/* Return Policy */}
             {settings.returnPolicy && (
               <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">

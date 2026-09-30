@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { formatBDT } from "@/lib/data";
 import { useProducts } from "@/lib/ProductsContext";
+import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
 import ImageSearchModal from "./ImageSearchModal";
 
 export default function Header() {
@@ -15,10 +16,16 @@ export default function Header() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const showSearchBar = pathname !== "/search";
+
+  // Load settings once
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,49 +72,50 @@ export default function Header() {
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
+  // Logo — use uploaded URL or default 买
+  const logoUrl = settings.logoUrl;
+
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-border-subtle bg-white shadow-sm">
         <div className="relative mx-auto flex max-w-[1800px] items-center justify-between gap-2 px-3 py-2.5 md:gap-3 md:px-4 md:py-3">
-
-          {/* LEFT GROUP — badge + logo + text (desktop shows all, mobile shows only badge) */}
-          <div className="flex flex-shrink-0 items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-1.5 md:gap-2">
             <div className="flex items-center gap-1 rounded-md border border-gold-primary/40 bg-bg-orange px-2 py-1 md:gap-1.5 md:px-2.5 md:py-1.5">
               <span className="text-sm md:text-base">🇨🇳</span>
               <span className="text-[8px] font-bold text-gold-primary md:text-[10px]">→</span>
               <span className="text-sm md:text-base">🇧🇩</span>
             </div>
 
-            {/* Desktop-only: logo + brand text next to badge */}
             <button
               onClick={() => router.push("/")}
-              className="hidden items-center gap-2 md:flex"
+              className="flex items-center gap-2"
             >
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-gold-primary text-base font-bold text-white shadow-orange-glow">
-                买
-              </div>
-              <div className="font-serif text-xl font-bold leading-none">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="logo"
+                  className="h-8 w-8 flex-shrink-0 rounded-md object-contain"
+                />
+              ) : (
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-gold-primary text-base font-bold text-white shadow-orange-glow">
+                  买
+                </div>
+              )}
+              <div className="hidden font-serif text-lg font-bold leading-none sm:block md:text-xl">
                 <span className="text-text-primary">ChinaDaily</span>
                 <span className="text-gold-primary">Bazar</span>
               </div>
             </button>
           </div>
 
-          {/* CENTER — logo + brand text (mobile only) */}
           <button
             onClick={() => router.push("/")}
-            className="absolute left-[53%] top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 md:hidden"
+            className="absolute left-[53%] top-1/2 -translate-x-1/2 -translate-y-1/2 font-serif text-lg font-bold leading-none sm:hidden"
           >
-            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gold-primary text-sm font-bold text-white shadow-orange-glow">
-              买
-            </div>
-            <span className="font-serif text-base font-bold leading-none">
-              <span className="text-text-primary">ChinaDaily</span>
-              <span className="text-gold-primary">Bazar</span>
-            </span>
+            <span className="text-text-primary">ChinaDaily</span>
+            <span className="text-gold-primary">Bazar</span>
           </button>
 
-          {/* DESKTOP NAV */}
           <nav className="ml-auto hidden items-center gap-6 text-sm font-medium md:flex">
             <button onClick={() => router.push("/")} className="text-text-primary transition hover:text-gold-primary">Home</button>
             <button onClick={() => router.push("/categories")} className="text-text-secondary transition hover:text-gold-primary">Categories</button>
@@ -115,8 +123,7 @@ export default function Header() {
             <button onClick={() => router.push("/account")} className="text-text-secondary transition hover:text-gold-primary">Account</button>
           </nav>
 
-          {/* RIGHT — actions */}
-          <div className="ml-auto flex flex-shrink-0 items-center gap-1 md:ml-0">
+          <div className="flex flex-shrink-0 items-center gap-1">
             <button
               aria-label="Wishlist"
               onClick={() => router.push("/wishlist")}
