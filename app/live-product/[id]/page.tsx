@@ -78,6 +78,12 @@ export default function LiveProductPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
 
+  // ✅ Reset thumbnail & image-fail flag when color changes
+  useEffect(() => {
+    setActiveImage(0);
+    setImgFailed(false);
+  }, [selectedColorId]);
+
   if (notFound) {
     return (
       <div className="min-h-screen bg-bg-secondary">
@@ -121,7 +127,14 @@ export default function LiveProductPage({
     : colors;
 
   const gallery = product.gallery?.length ? product.gallery : [product.image];
-  const currentImage = gallery[activeImage] ?? product.image;
+
+  // ✅ Variant-aware image: if a color has its own photo, use it.
+  const variantImage =
+    selectedColor?.image ||
+    product.variants?.find((v) => v.colorId === selectedColorId && v.image)
+      ?.image;
+
+  const currentImage = variantImage || gallery[activeImage] || product.image;
   const showImage = currentImage && !imgFailed;
   const location = findLocation(features);
 
@@ -151,7 +164,7 @@ export default function LiveProductPage({
         priceMax: product.priceMax,
         oldPrice: product.oldPrice,
         discount: product.discount,
-        image: product.image,
+        image: currentImage, // ✅ uses the currently-shown variant image
         rating: product.rating,
         reviews: product.reviews,
         description: product.description,
@@ -184,7 +197,7 @@ export default function LiveProductPage({
       price: product.price,
       oldPrice: product.oldPrice,
       discount: product.discount,
-      image: product.image,
+      image: currentImage, // ✅ wishlist too
       rating: product.rating,
       reviews: product.reviews,
       description: product.description,
@@ -649,7 +662,7 @@ export default function LiveProductPage({
         </div>
       </div>
 
-      {/* ⭐ INLINE COLOR MODAL — replaces the broken component */}
+      {/* ⭐ INLINE COLOR MODAL */}
       {showColorModal && (
         <div
           className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"
