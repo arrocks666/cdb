@@ -19,7 +19,8 @@ export default function WishlistCard({ product }: { product: Product }) {
 
   const handleAddToCart = () => {
     const defaultColorId = product.colors?.[0]?.id ?? "default";
-    cart.add(product.id, defaultColorId, 1);
+    // ✅ FIXED: cast product.id to string and pass undefined for size
+    cart.add(String(product.id), defaultColorId, undefined, 1);
   };
 
   const showImage = product.image && !imgFailed;
@@ -54,7 +55,8 @@ export default function WishlistCard({ product }: { product: Product }) {
         aria-label="Remove from wishlist"
         onClick={(e) => {
           e.preventDefault();
-          wishlist.remove(product.id);
+          // ✅ FIXED: cast product.id to string
+          wishlist.remove(String(product.id));
         }}
         className="absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-red-primary text-white transition hover:bg-red-bright"
       >

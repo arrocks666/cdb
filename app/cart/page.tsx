@@ -25,6 +25,7 @@ export default function CartPage() {
             image: item.liveSnapshot.image,
             price: item.liveSnapshot.price,
             colorId: item.colorId,
+            size: item.size, // ✅ FIXED: pass size through
             quantity: item.quantity,
             lineTotal: item.liveSnapshot.price * item.quantity,
             href: `/live-product/${item.productId}`,
@@ -41,6 +42,7 @@ export default function CartPage() {
           image: product.image,
           price: product.price,
           colorId: item.colorId,
+          size: item.size, // ✅ FIXED: pass size through
           quantity: item.quantity,
           lineTotal: product.price * item.quantity,
           href: `/product/${product.id}`,
@@ -54,6 +56,7 @@ export default function CartPage() {
       image: string;
       price: number;
       colorId: string;
+      size?: string; // ✅ FIXED: added to type
       quantity: number;
       lineTotal: number;
       href: string;
@@ -150,12 +153,15 @@ export default function CartPage() {
 
               <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
                 <div className="inline-flex items-center rounded border border-border-subtle bg-white">
-                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.quantity - 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">−</button>
+                  {/* ✅ FIXED: pass row.size as 3rd arg */}
+                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity - 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">−</button>
                   <span className="w-8 text-center text-sm font-semibold tabular-nums text-text-primary">{row.quantity}</span>
-                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.quantity + 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">+</button>
+                  {/* ✅ FIXED: pass row.size as 3rd arg */}
+                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity + 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">+</button>
                 </div>
 
-                <button aria-label="Remove" onClick={() => cart.remove(row.productId, row.colorId)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-red-primary">
+                {/* ✅ FIXED: pass row.size as 3rd arg */}
+                <button aria-label="Remove" onClick={() => cart.remove(row.productId, row.colorId, row.size)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-red-primary">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
