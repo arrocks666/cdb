@@ -1,30 +1,39 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { LiveProduct } from "@/lib/live-search";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  onResults: (products: LiveProduct[]) => void;
+  onJobStarted: (jobId: string) => void;
 };
 
-type Stage = "idle" | "uploading" | "searching" | "ranking" | "done";
+type Stage = "idle" | "uploading" | "searching" | "loading" | "started";
 
-export default function ImageSearchModal({ open, onClose, onResults }: Props) {
+export default function ImageSearchModal({
+  open,
+  onClose,
+  onJobStarted,
+}: Props) {
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState<Stage>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [readyCount, setReadyCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const reset = useCallback(() => {
     setPreview(null);
     setFile(null);
     setError(null);
     setStage("idle");
+    setReadyCount(0);
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -34,19 +43,16 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
     }
   }, [open, reset]);
 
-  const cancelSearch = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setStage("idle");
-    setError(null);
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   const handleClose = () => {
-    if (stage === "uploading" || stage === "searching" || stage === "ranking") {
-      if (!confirm("Cancel image search?")) return;
-      cancelSearch();
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
     onClose();
   };
@@ -60,10 +66,8 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
       setError("Image must be under 5MB");
       return;
     }
-
     setError(null);
     setFile(f);
-
     const reader = new FileReader();
     reader.onload = (ev) => setPreview(ev.target?.result as string);
     reader.readAsDataURL(f);
@@ -78,30 +82,17 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
   const handleSearch = async () => {
     if (!file) return;
-
     setError(null);
     setStage("uploading");
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      setError("Search timed out. Please try again.");
-      setStage("idle");
-    }, 90000);
+    setReadyCount(0);
 
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      setStage("searching");
-
       const formData = new FormData();
       formData.append("image", file);
 
       const res = await fetch("/api/image-search", {
         method: "POST",
         body: formData,
-        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -109,26 +100,52 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
         throw new Error(data.error || "Search failed");
       }
 
-      setStage("ranking");
-      await new Promise((r) => setTimeout(r, 800));
-
       const data = await res.json();
+      const jobId = data.jobId;
+      if (!jobId) throw new Error("No jobId returned");
 
-      clearTimeout(timeoutId);
-      abortRef.current = null;
+      setStage("searching");
 
-      setStage("done");
-      onResults(data.products ?? []);
-      onClose();
+      pollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await fetch(
+            `/api/image-search/status?jobId=${jobId}`
+          );
+          if (!statusRes.ok) return;
+          const status = await statusRes.json();
+
+          const count = status.products?.length ?? 0;
+          setReadyCount(count);
+
+          if (status.status === "searching") {
+            setStage("searching");
+          } else if (status.status === "loading") {
+            setStage("loading");
+          }
+
+          if (count >= 1 || status.status === "done") {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setStage("started");
+            onJobStarted(jobId);
+            onClose();
+          }
+
+          if (status.status === "error") {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setError(status.error || "Search failed");
+            setStage("idle");
+          }
+        } catch (pollErr) {
+          console.warn("Poll error:", pollErr);
+        }
+      }, 2000);
     } catch (err: any) {
-      clearTimeout(timeoutId);
-      abortRef.current = null;
-
-      if (err.name === "AbortError") {
-        setStage("idle");
-        return;
-      }
-
       console.error("Image search failed:", err);
       setError(err.message || "Something went wrong. Please try again.");
       setStage("idle");
@@ -138,17 +155,30 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
   if (!open) return null;
 
   const isLoading =
-    stage === "uploading" || stage === "searching" || stage === "ranking";
+    stage === "uploading" || stage === "searching" || stage === "loading";
+
+  const isUploading = stage === "uploading";
+  const isUploadDone =
+    stage === "searching" || stage === "loading" || stage === "started";
+  const isSearching = stage === "searching";
+  const isSearchDone =
+    (stage === "loading" || stage === "started") && readyCount > 0;
+  const isLoadingDetails = stage === "loading";
+  const isDetailsDone = stage === "started";
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={handleClose}
+      onClick={isLoading ? undefined : handleClose}
     >
       <style jsx>{`
         @keyframes progressSlide {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
         }
       `}</style>
 
@@ -234,24 +264,36 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
               </div>
 
               {isLoading && (
-                <div className="mt-3 w-full space-y-2">
+                <div className="mt-4 w-full space-y-3">
                   <ProgressStep
-                    active={stage === "uploading"}
-                    done={stage !== "uploading"}
+                    active={isUploading}
+                    done={isUploadDone}
                     label="Uploading photo"
                   />
                   <ProgressStep
-                    active={stage === "searching"}
-                    done={stage === "ranking"}
-                    label="Searching for the best match"
+                    active={isSearching}
+                    done={isSearchDone}
+                    label="Searching the best match"
                   />
                   <ProgressStep
-                    active={stage === "ranking"}
-                    done={false}
-                    label="Finding the best match for you"
+                    active={isLoadingDetails}
+                    done={isDetailsDone}
+                    label="Loading product details"
                   />
+
+                  {readyCount > 0 && (
+                    <p className="text-center text-[11px] font-medium text-success md:text-xs">
+                      ✓ {readyCount} product{readyCount > 1 ? "s" : ""} ready —
+                      opening results...
+                    </p>
+                  )}
+
                   <p className="text-center text-[10px] text-text-muted md:text-xs">
-                    Matching from thousands of products...
+                    {isUploading && "Preparing your photo..."}
+                    {isSearching &&
+                      "Please be patient, this can take up to 2 minutes."}
+                    {isLoadingDetails &&
+                      "Getting colors, sizes, and details..."}
                   </p>
                 </div>
               )}
@@ -279,10 +321,11 @@ export default function ImageSearchModal({ open, onClose, onResults }: Props) {
 
         <div className="flex gap-2 border-t border-border-subtle px-4 py-3">
           <button
-            onClick={isLoading ? cancelSearch : handleClose}
-            className="flex-1 rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary transition hover:bg-bg-input md:text-sm"
+            onClick={handleClose}
+            disabled={isLoading}
+            className="flex-1 rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary transition hover:bg-bg-input disabled:opacity-40 md:text-sm"
           >
-            {isLoading ? "Cancel Search" : "Cancel"}
+            Cancel
           </button>
           <button
             onClick={handleSearch}
@@ -325,7 +368,16 @@ function ProgressStep({
         }`}
       >
         {done ? (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
         ) : active ? (
@@ -347,10 +399,13 @@ function ProgressStep({
           {label}
         </div>
         {active && (
-          <div className="mt-1 h-0.5 w-full overflow-hidden rounded-full bg-border-subtle">
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-border-subtle">
             <div
-              className="h-full bg-gold-primary"
-              style={{ animation: "progressSlide 1.5s infinite linear" }}
+              className="h-full bg-success"
+              style={{
+                animation: "progressSlide 1.5s infinite linear",
+                width: "60%",
+              }}
             />
           </div>
         )}

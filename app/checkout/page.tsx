@@ -19,9 +19,7 @@ import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firest
 
 const PAYMENT_METHODS = [
   { id: "cod", label: "Cash on Delivery", icon: "💵", note: "Pay when you receive" },
-  { id: "bkash", label: "bKash", icon: "📱", note: "Pay with bKash" },
-  { id: "nagad", label: "Nagad", icon: "📲", note: "Pay with Nagad" },
-  { id: "online", label: "Bank Transfer", icon: "💳", note: "Bank account transfer" },
+  { id: "bank", label: "Bank Transfer", icon: "💳", note: "Bank account transfer" },
 ];
 
 function CheckoutImage({ src }: { src: string }) {
@@ -33,6 +31,7 @@ function CheckoutImage({ src }: { src: string }) {
 type CheckoutRow = {
   productId: string;
   colorId: string;
+  size?: string;
   quantity: number;
   price: number;
   title: string;
@@ -82,10 +81,7 @@ function CheckoutContent() {
     }
     (async () => {
       const all = await getUserCoupons(user.uid);
-      // Filter valid + only coupons with amount > 0
-      setAvailableCoupons(
-        filterValidCoupons(all).filter((c) => c.amount > 0)
-      );
+      setAvailableCoupons(filterValidCoupons(all).filter((c) => c.amount > 0));
     })();
   }, [user]);
 
@@ -108,6 +104,7 @@ function CheckoutContent() {
         result.push({
           productId: item.productId,
           colorId: item.colorId,
+          size: item.size,
           quantity: item.quantity,
           price,
           title: item.liveSnapshot.title || "Product",
@@ -126,6 +123,7 @@ function CheckoutContent() {
       result.push({
         productId: product.id,
         colorId: item.colorId,
+        size: item.size,
         quantity: item.quantity,
         price,
         title: product.title || "Product",
@@ -182,11 +180,7 @@ function CheckoutContent() {
 
     if (rows.length === 0) return;
 
-    if (
-      (payment === "bkash" || payment === "nagad" || payment === "online") &&
-      !transactionId.trim() &&
-      paidAmount > 0
-    ) {
+    if (payment === "bank" && !transactionId.trim() && paidAmount > 0) {
       if (!confirm("You haven't entered a Transaction ID. Place order anyway?")) {
         return;
       }
@@ -200,6 +194,7 @@ function CheckoutContent() {
         items: rows.map((r) => ({
           productId: r.productId,
           colorId: r.colorId,
+          size: r.size,
           quantity: r.quantity,
           price: r.price,
           title: r.title,
@@ -226,7 +221,7 @@ function CheckoutContent() {
         }
       }
 
-      rows.forEach((r) => cart.remove(r.productId, r.colorId));
+      rows.forEach((r) => cart.remove(r.productId, r.colorId, r.size));
       router.push(`/orders/${newOrder.id}`);
     } catch (err: any) {
       console.error("Order error:", err);
@@ -263,16 +258,7 @@ function CheckoutContent() {
               href="/cart"
               className="flex h-8 w-8 items-center justify-center text-text-primary hover:text-gold-primary"
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </Link>
@@ -281,37 +267,11 @@ function CheckoutContent() {
             </h1>
           </div>
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 pb-3">
-            <StepDot
-              num={1}
-              label="Address"
-              active={step === 1}
-              done={step > 1}
-              onClick={() => setStep(1)}
-            />
-            <div
-              className={`mx-2 h-0.5 flex-1 ${
-                step > 1 ? "bg-gold-primary" : "bg-border-subtle"
-              }`}
-            />
-            <StepDot
-              num={2}
-              label="Payment"
-              active={step === 2}
-              done={step > 2}
-              onClick={() => setStep(2)}
-            />
-            <div
-              className={`mx-2 h-0.5 flex-1 ${
-                step > 2 ? "bg-gold-primary" : "bg-border-subtle"
-              }`}
-            />
-            <StepDot
-              num={3}
-              label="Confirm"
-              active={step === 3}
-              done={false}
-              onClick={() => setStep(3)}
-            />
+            <StepDot num={1} label="Address" active={step === 1} done={step > 1} onClick={() => setStep(1)} />
+            <div className={`mx-2 h-0.5 flex-1 ${step > 1 ? "bg-gold-primary" : "bg-border-subtle"}`} />
+            <StepDot num={2} label="Payment" active={step === 2} done={step > 2} onClick={() => setStep(2)} />
+            <div className={`mx-2 h-0.5 flex-1 ${step > 2 ? "bg-gold-primary" : "bg-border-subtle"}`} />
+            <StepDot num={3} label="Confirm" active={step === 3} done={false} onClick={() => setStep(3)} />
           </div>
         </div>
 
@@ -322,30 +282,10 @@ function CheckoutContent() {
                 Delivery Address
               </h2>
               <div className="space-y-3">
-                <Field
-                  label="Full Name"
-                  value={address.name}
-                  onChange={(v) => setAddress({ ...address, name: v })}
-                  placeholder="Enter your full name"
-                />
-                <Field
-                  label="Phone Number"
-                  value={address.phone}
-                  onChange={(v) => setAddress({ ...address, phone: v })}
-                  placeholder="+880 1XXX XXXXXX"
-                />
-                <Field
-                  label="Full Address"
-                  value={address.address}
-                  onChange={(v) => setAddress({ ...address, address: v })}
-                  placeholder="House, Road, Area"
-                />
-                <Field
-                  label="District"
-                  value={address.district}
-                  onChange={(v) => setAddress({ ...address, district: v })}
-                  placeholder="e.g., Dhaka"
-                />
+                <Field label="Full Name" value={address.name} onChange={(v) => setAddress({ ...address, name: v })} placeholder="Enter your full name" />
+                <Field label="Phone Number" value={address.phone} onChange={(v) => setAddress({ ...address, phone: v })} placeholder="+880 1XXX XXXXXX" />
+                <Field label="Full Address" value={address.address} onChange={(v) => setAddress({ ...address, address: v })} placeholder="House, Road, Area" />
+                <Field label="District" value={address.district} onChange={(v) => setAddress({ ...address, district: v })} placeholder="e.g., Dhaka" />
               </div>
               <button
                 onClick={() => setStep(2)}
@@ -375,9 +315,7 @@ function CheckoutContent() {
                     >
                       <div
                         className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
-                          payment === method.id
-                            ? "border-gold-primary"
-                            : "border-border-subtle"
+                          payment === method.id ? "border-gold-primary" : "border-border-subtle"
                         }`}
                       >
                         {payment === method.id && (
@@ -397,41 +335,15 @@ function CheckoutContent() {
                   ))}
                 </div>
 
-                {payment === "bkash" && settings.bkashNumber && (
-                  <PaymentNumberBox
-                    label="Send payment to bKash"
-                    number={settings.bkashNumber}
-                    onCopy={handleCopy}
-                  />
-                )}
-                {payment === "nagad" && settings.nagadNumber && (
-                  <PaymentNumberBox
-                    label="Send payment to Nagad"
-                    number={settings.nagadNumber}
-                    onCopy={handleCopy}
-                  />
-                )}
-                {payment === "online" && settings.bankAccountNumber && (
+                {payment === "bank" && settings.bankAccountNumber && (
                   <div className="mt-4 rounded-lg border border-gold-primary/40 bg-bg-orange p-4">
                     <p className="text-xs font-bold text-text-primary md:text-sm">
                       Bank Transfer Details
                     </p>
                     <div className="mt-3 space-y-2 text-xs">
-                      <CopyRow
-                        label="Bank"
-                        value={settings.bankName}
-                        onCopy={handleCopy}
-                      />
-                      <CopyRow
-                        label="Account Number"
-                        value={settings.bankAccountNumber}
-                        onCopy={handleCopy}
-                      />
-                      <CopyRow
-                        label="Account Holder"
-                        value={settings.bankAccountHolder}
-                        onCopy={handleCopy}
-                      />
+                      <CopyRow label="Bank" value={settings.bankName} onCopy={handleCopy} />
+                      <CopyRow label="Account Number" value={settings.bankAccountNumber} onCopy={handleCopy} />
+                      <CopyRow label="Account Holder" value={settings.bankAccountHolder} onCopy={handleCopy} />
                     </div>
                   </div>
                 )}
@@ -481,7 +393,7 @@ function CheckoutContent() {
                 <div className="space-y-3">
                   {rows.map((r) => (
                     <div
-                      key={`${r.productId}-${r.colorId}`}
+                      key={`${r.productId}-${r.colorId}-${r.size ?? ""}`}
                       className="flex items-center gap-3"
                     >
                       <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
@@ -493,6 +405,7 @@ function CheckoutContent() {
                         </p>
                         <p className="text-[11px] text-text-muted">
                           Qty {r.quantity}
+                          {r.size ? ` · ${r.size}` : ""}
                         </p>
                       </div>
                       <span className="text-sm font-bold text-red-primary">
@@ -532,9 +445,7 @@ function CheckoutContent() {
                         <input
                           type="text"
                           value={couponInput}
-                          onChange={(e) =>
-                            setCouponInput(e.target.value.toUpperCase())
-                          }
+                          onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                           placeholder="Enter code"
                           className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
                         />
@@ -569,9 +480,7 @@ function CheckoutContent() {
                             <span className="font-semibold text-text-primary">
                               {formatBDT(c.amount)} OFF
                             </span>
-                            <span className="text-text-muted">
-                              Tap to apply
-                            </span>
+                            <span className="text-text-muted">Tap to apply</span>
                           </button>
                         ))}
                       </div>
@@ -580,7 +489,7 @@ function CheckoutContent() {
                 </div>
               )}
 
-              {payment !== "cod" && (
+              {payment === "bank" && (
                 <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
                   <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
                     Payment Confirmation
@@ -589,9 +498,7 @@ function CheckoutContent() {
                   <div className="space-y-3">
                     <div>
                       <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                        Transaction ID (from your{" "}
-                        {PAYMENT_METHODS.find((p) => p.id === payment)?.label}{" "}
-                        app)
+                        Transaction ID (from your bank transfer)
                       </label>
                       <input
                         type="text"
@@ -640,15 +547,11 @@ function CheckoutContent() {
                 <div className="space-y-1.5 text-xs md:text-sm">
                   <div className="flex justify-between text-text-secondary">
                     <span>Subtotal</span>
-                    <span className="text-text-primary">
-                      {formatBDT(subtotal)}
-                    </span>
+                    <span className="text-text-primary">{formatBDT(subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-text-secondary">
                     <span>Shipping</span>
-                    <span className="text-text-primary">
-                      {formatBDT(shipping)}
-                    </span>
+                    <span className="text-text-primary">{formatBDT(shipping)}</span>
                   </div>
                   {appliedCoupon && discountAmount > 0 && (
                     <div className="flex justify-between text-success">
@@ -670,20 +573,16 @@ function CheckoutContent() {
                       {formatBDT(total)}
                     </span>
                   </div>
-                  {payment !== "cod" && (
+                  {payment === "bank" && (
                     <>
                       <div className="flex justify-between text-success">
                         <span>Paid now</span>
-                        <span className="font-semibold">
-                          {formatBDT(paidAmount)}
-                        </span>
+                        <span className="font-semibold">{formatBDT(paidAmount)}</span>
                       </div>
                       {dueAmount > 0 && (
                         <div className="flex justify-between text-red-primary">
                           <span>Due on delivery</span>
-                          <span className="font-semibold">
-                            {formatBDT(dueAmount)}
-                          </span>
+                          <span className="font-semibold">{formatBDT(dueAmount)}</span>
                         </div>
                       )}
                     </>
@@ -725,36 +624,6 @@ function CheckoutContent() {
         message="Please login or create an account to place your order. Your cart will be saved."
       />
     </>
-  );
-}
-
-function PaymentNumberBox({
-  label,
-  number,
-  onCopy,
-}: {
-  label: string;
-  number: string;
-  onCopy: (t: string) => void;
-}) {
-  return (
-    <div className="mt-4 rounded-lg border border-gold-primary/40 bg-bg-orange p-4">
-      <p className="text-xs font-bold text-text-primary md:text-sm">{label}</p>
-      <div className="mt-2 flex items-center gap-2">
-        <span className="flex-1 rounded border border-gold-primary/30 bg-white px-3 py-2 font-mono text-sm font-bold text-text-primary md:text-base">
-          {number}
-        </span>
-        <button
-          onClick={() => onCopy(number)}
-          className="rounded-lg bg-gold-primary px-3 py-2 text-xs font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury"
-        >
-          Copy
-        </button>
-      </div>
-      <p className="mt-2 text-[11px] text-text-muted">
-        Send the amount and enter the Transaction ID below.
-      </p>
-    </div>
   );
 }
 
@@ -808,8 +677,8 @@ function StepDot({
           state === "done"
             ? "border-success bg-success text-white"
             : state === "active"
-              ? "border-gold-primary bg-gold-primary text-white shadow-orange-glow"
-              : "border-border-subtle bg-white text-text-muted"
+            ? "border-gold-primary bg-gold-primary text-white shadow-orange-glow"
+            : "border-border-subtle bg-white text-text-muted"
         }`}
       >
         {done ? "✓" : num}
@@ -819,8 +688,8 @@ function StepDot({
           state === "active"
             ? "text-gold-primary"
             : state === "done"
-              ? "text-success"
-              : "text-text-muted"
+            ? "text-success"
+            : "text-text-muted"
         }`}
       >
         {label}
@@ -858,9 +727,7 @@ function Field({
 
 export default function CheckoutPage() {
   return (
-    <Suspense
-      fallback={<div className="p-8 text-center text-text-muted">Loading…</div>}
-    >
+    <Suspense fallback={<div className="p-8 text-center text-text-muted">Loading…</div>}>
       <CheckoutContent />
     </Suspense>
   );

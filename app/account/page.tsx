@@ -18,6 +18,8 @@ import {
   filterValidCoupons,
   type Coupon,
 } from "@/lib/coupons";
+import { getUserOrders } from "@/lib/firestoreOrders";
+import type { Order } from "@/lib/OrderContext";
 
 type MenuItem = { icon: string; title: string; href?: string };
 
@@ -49,6 +51,9 @@ export default function AccountPage() {
   const [couponsList, setCouponsList] = useState<Coupon[]>([]);
   const [couponCount, setCouponCount] = useState(0);
 
+  const [dueOrders, setDueOrders] = useState<Order[]>([]);
+  const [totalDue, setTotalDue] = useState(0);
+
   useEffect(() => {
     if (!user) return;
     getSavedPayments(user.uid).then(setPayments);
@@ -59,6 +64,18 @@ export default function AccountPage() {
       const valid = filterValidCoupons(all);
       setCouponsList(valid);
       setCouponCount(valid.length);
+    })();
+
+    (async () => {
+      const orders = await getUserOrders(user.uid);
+      const pending = orders.filter((o) => {
+        const paid = o.paidAmount ?? 0;
+        return paid < o.total;
+      });
+      setDueOrders(pending);
+      setTotalDue(
+        pending.reduce((sum, o) => sum + (o.total - (o.paidAmount ?? 0)), 0)
+      );
     })();
   }, [user]);
 
@@ -170,6 +187,37 @@ export default function AccountPage() {
             <StatBox label="Coupons" value={String(couponCount)} />
           </div>
 
+          {/* DUE SUMMARY */}
+          {totalDue > 0 && (
+            <div className="mt-3 rounded-lg border-2 border-red-primary/40 bg-red-primary/5 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-primary/10 text-xl">
+                    ⚠️
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-red-primary">
+                      Outstanding Due
+                    </p>
+                    <p className="mt-0.5 text-xl font-bold text-red-primary">
+                      {formatBDT(totalDue)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-text-secondary">
+                      from {dueOrders.length}{" "}
+                      {dueOrders.length === 1 ? "order" : "orders"}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/orders"
+                  className="rounded-lg bg-red-primary px-4 py-2 text-xs font-semibold text-white shadow-red-glow transition hover:opacity-90"
+                >
+                  View Orders
+                </Link>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 overflow-hidden rounded-lg border border-border-subtle bg-white shadow-card-dark">
             {menuItems.map((item, i) => {
               const isCoupons = item.title === "Coupons & Offers";
@@ -212,7 +260,7 @@ export default function AccountPage() {
                     <div className="border-t border-border-subtle bg-bg-input px-4 py-4">
                       <div className="mb-3 flex items-center justify-between">
                         <p className="text-xs font-bold text-text-primary md:text-sm">
-                          Saved Payment Methods
+                          Saved Payment Method
                         </p>
                         <button
                           onClick={() => setEditingPayments(!editingPayments)}
@@ -223,20 +271,6 @@ export default function AccountPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <InputField
-                          label="bKash Number"
-                          value={payments.bkash ?? ""}
-                          onChange={(v) => setPayments({ ...payments, bkash: v })}
-                          editing={editingPayments}
-                          placeholder="01XXXXXXXXX"
-                        />
-                        <InputField
-                          label="Nagad Number"
-                          value={payments.nagad ?? ""}
-                          onChange={(v) => setPayments({ ...payments, nagad: v })}
-                          editing={editingPayments}
-                          placeholder="01XXXXXXXXX"
-                        />
                         <InputField
                           label="Bank Account Number"
                           value={payments.bank ?? ""}
@@ -263,9 +297,9 @@ export default function AccountPage() {
                         </div>
                       )}
 
-                      {!editingPayments && !payments.bkash && !payments.nagad && !payments.bank && (
+                      {!editingPayments && !payments.bank && (
                         <p className="mt-3 text-[11px] text-text-muted md:text-xs">
-                          No payment methods saved yet. Click Edit to add.
+                          No payment method saved yet. Click Edit to add.
                         </p>
                       )}
                     </div>

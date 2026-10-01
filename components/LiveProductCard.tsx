@@ -5,16 +5,13 @@ import Link from "next/link";
 import { formatBDT } from "@/lib/data";
 import { LiveProduct } from "@/lib/live-search";
 import { useWishlist } from "@/lib/WishlistContext";
-import { useCart } from "@/lib/CartContext";
 import { useLiveProducts } from "@/lib/LiveProductContext";
 
 export default function LiveProductCard({ product }: { product: LiveProduct }) {
   const wishlist = useWishlist();
-  const cart = useCart();
   const liveStore = useLiveProducts();
   const inWishlist = wishlist.has(product.id);
   const [imgFailed, setImgFailed] = useState(false);
-  const [addedFeedback, setAddedFeedback] = useState(false);
 
   // Auto-save to live store so the detail page can find it
   useEffect(() => {
@@ -22,33 +19,10 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product.id]);
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleGoToProduct = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    cart.addLive(
-      {
-        id: product.id,
-        title: product.title,
-        subtitle: product.subtitle,
-        price: product.price,
-        oldPrice: product.oldPrice,
-        discount: product.discount,
-        image: product.image,
-        rating: product.rating,
-        reviews: product.reviews,
-        description: product.description,
-        sourceUrl: product.sourceUrl,
-        moq: product.moq,
-        supplierName: product.supplierName,
-        priceOriginalCny: product.priceOriginalCny,
-      },
-      "default",
-      1
-    );
-
-    setAddedFeedback(true);
-    setTimeout(() => setAddedFeedback(false), 1500);
+    window.location.href = `/live-product/${product.id}`;
   };
 
   const handleToggleWishlist = (e: React.MouseEvent) => {
@@ -74,6 +48,11 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
   };
 
   const showImage = product.image && !imgFailed;
+
+  const priceLabel =
+    product.priceMax && product.priceMax > product.price
+      ? `${formatBDT(product.price)}–${formatBDT(product.priceMax)}`
+      : formatBDT(product.price);
 
   return (
     <div className="group relative overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm transition duration-200 hover:shadow-md">
@@ -144,7 +123,7 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">
             <span className="text-base font-bold text-red-primary md:text-lg">
-              {formatBDT(product.price)}
+              {priceLabel}
             </span>
             {product.oldPrice > product.price && (
               <span className="text-[10px] text-text-muted line-through md:text-[11px]">
@@ -157,35 +136,25 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
 
       <div className="px-2.5 pb-2.5 md:px-3 md:pb-3">
         <button
-          onClick={handleAddToCart}
-          className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-semibold text-white transition md:text-[12px] ${
-            addedFeedback
-              ? "bg-success"
-              : "bg-gold-primary hover:bg-gold-luxury"
-          }`}
+          onClick={handleGoToProduct}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gold-primary py-2 text-[11px] font-semibold text-white transition hover:bg-gold-luxury md:text-[12px]"
         >
-          {addedFeedback ? (
-            <>✓ Added</>
-          ) : (
-            <>
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ pointerEvents: "none" }}
-              >
-                <circle cx="9" cy="21" r="1" />
-                <circle cx="20" cy="21" r="1" />
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-              </svg>
-              Add to Cart
-            </>
-          )}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: "none" }}
+          >
+            <circle cx="9" cy="21" r="1" />
+            <circle cx="20" cy="21" r="1" />
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+          </svg>
+          Order Now
         </button>
       </div>
     </div>

@@ -8,10 +8,10 @@ import {
 import { db } from "./firebase";
 
 export type MarkupTier = {
-  id: string;         // unique ID for React keys
-  min: number;        // min cost in BDT
-  max: number;        // max cost in BDT (use 999999 for last tier)
-  multiplier: number; // e.g. 1.50
+  id: string;
+  min: number;
+  max: number;
+  multiplier: number;
 };
 
 export type StoreSettings = {
@@ -28,43 +28,39 @@ export type StoreSettings = {
   whatsappNumber: string;
   whatsappNumber2: string;
 
-  // Shipping method
   byAirRate1: number;
   byAirRate2: number;
   byAirDays: string;
   bySeaRate: number;
   bySeaDays: string;
 
-  // NEW: Shipping visibility
   showByAirOnProductPage: boolean;
   showBySeaOnProductPage: boolean;
 
-  // Payment split
   payNowPercent: number;
   defaultWeightKg: number;
   shippingWarning: string;
 
-  // Payment numbers
   bkashNumber: string;
   nagadNumber: string;
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
 
-  // NEW: Logo
   logoUrl: string;
-
-  // NEW: Markup tiers
   markupTiers: MarkupTier[];
+
+  // Shipping details modal text (shown when "বিস্তারিত" is clicked)
+  shippingDetailsBangla: string;
 
   updatedAt?: unknown;
 };
 
 export const DEFAULT_MARKUP_TIERS: MarkupTier[] = [
-  { id: "tier-1", min: 0,     max: 500,      multiplier: 1.50 },
-  { id: "tier-2", min: 500,   max: 2000,     multiplier: 1.35 },
-  { id: "tier-3", min: 2000,  max: 5000,     multiplier: 1.25 },
-  { id: "tier-4", min: 5000,  max: 10000,    multiplier: 1.18 },
+  { id: "tier-1", min: 0, max: 500, multiplier: 1.5 },
+  { id: "tier-2", min: 500, max: 2000, multiplier: 1.35 },
+  { id: "tier-3", min: 2000, max: 5000, multiplier: 1.25 },
+  { id: "tier-4", min: 5000, max: 10000, multiplier: 1.18 },
   { id: "tier-5", min: 10000, max: 99999999, multiplier: 1.12 },
 ];
 
@@ -105,9 +101,12 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   bankAccountNumber: "1234567890123",
   bankAccountHolder: "ChinaDailyBazar",
 
-  logoUrl: "", // empty = use default "买"
-
+  logoUrl: "",
   markupTiers: DEFAULT_MARKUP_TIERS,
+
+  shippingDetailsBangla: "",
+
+  // updatedAt set on save
 };
 
 const SETTINGS_DOC = ["settings", "general"] as const;
@@ -147,9 +146,6 @@ export async function saveSettings(
   );
 }
 
-/**
- * Find the multiplier for a given cost in BDT.
- */
 export function findMarkupMultiplier(
   costBdt: number,
   tiers: MarkupTier[]
@@ -159,6 +155,5 @@ export function findMarkupMultiplier(
       return tier.multiplier;
     }
   }
-  // Fallback: last tier
-  return tiers[tiers.length - 1]?.multiplier ?? 1.10;
+  return tiers[tiers.length - 1]?.multiplier ?? 1.1;
 }

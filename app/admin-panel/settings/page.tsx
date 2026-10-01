@@ -73,6 +73,7 @@ export default function AdminSettingsPage() {
         bankAccountHolder: settings.bankAccountHolder,
         logoUrl: settings.logoUrl,
         markupTiers: settings.markupTiers,
+        shippingDetailsBangla: settings.shippingDetailsBangla,
       });
       showToast("Settings saved");
     } catch (err: any) {
@@ -405,7 +406,6 @@ export default function AdminSettingsPage() {
           </p>
 
           <div className="space-y-4">
-            {/* By Air */}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gold-primary">
@@ -443,7 +443,6 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
-            {/* By Sea */}
             <div className="border-t border-border-subtle pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gold-primary">
@@ -476,7 +475,6 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
-            {/* Payment Split */}
             <div className="border-t border-border-subtle pt-4">
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gold-primary">
                 Payment Split
@@ -530,6 +528,28 @@ export default function AdminSettingsPage() {
               value={settings.howToOrder}
               onChange={(v) => update("howToOrder", v)}
               rows={5}
+            />
+          </div>
+        </section>
+
+        {/* Shipping Details (Bangla) — বিস্তারিত modal */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
+            Shipping Details (বিস্তারিত)
+          </h2>
+          <p className="mb-4 text-xs text-text-muted">
+            Shown when customer clicks "বিস্তারিত" on a product page. Leave empty to use the default text.
+          </p>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Shipping Details Text (Bangla)
+            </label>
+            <textarea
+              value={settings.shippingDetailsBangla ?? ""}
+              onChange={(e) => update("shippingDetailsBangla", e.target.value)}
+              rows={14}
+              placeholder="ক্যাটাগরিঃ এ - ৮০০টাকা প্রতি কেজি&#10;...&#10;&#10;(Leave empty to use default)"
+              className="w-full resize-none rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
             />
           </div>
         </section>

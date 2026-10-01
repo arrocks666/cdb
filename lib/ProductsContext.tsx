@@ -8,27 +8,51 @@ import {
   ReactNode,
   useCallback,
 } from "react";
-import {
-  collection,
-  getDocs,
-  query,
-  orderBy,
-  limit,
-} from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "./firebase";
+
+export type ProductColor = {
+  id: string;
+  label: string;
+  hex: string;
+  image?: string;
+};
+
+export type ProductVariant = {
+  colorId?: string;
+  size?: string;
+  priceCny?: number;
+  price?: number;
+  stock?: number;
+  image?: string;
+  skuId?: string;
+};
+
+export type ProductSpec = {
+  name: string;
+  value: string;
+};
 
 export type Product = {
   id: string;
   title: string;
   subtitle?: string;
-  price: number;
+  price: number;          // selling price of cheapest variant (BDT)
+  priceMax?: number;      // optional — if present and !== price, show range
+  priceCnyMin?: number;   // 1688 CNY min (for admin)
+  priceCnyMax?: number;   // 1688 CNY max (for admin)
   oldPrice: number;
   discount: number;
   rating: number;
   reviews: number;
   image: string;
   gallery: string[];
-  colors: { id: string; label: string; hex: string }[];
+  colors: ProductColor[];
+  sizes: string[];
+  variants?: ProductVariant[];
+  specs?: ProductSpec[];
+  descriptionImages?: string[];
+  videoUrl?: string;
   inStock: boolean;
   stockCount: number;
   features: { icon: string; label: string }[];
@@ -44,6 +68,7 @@ export type Product = {
   isTrending?: boolean;
   isFeatured?: boolean;
   views?: number;
+  weightKg?: number;
 };
 
 type ProductsContextType = {
@@ -68,12 +93,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       const snap = await getDocs(collection(db, "products"));
-      const list = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Product, "id">),
-      }));
+      const list = snap.docs.map((d) => {
+        const data = d.data() as Omit<Product, "id">;
+        return {
+          ...data,
+          id: d.id,
+          colors: Array.isArray(data.colors) ? data.colors : [],
+          sizes: Array.isArray(data.sizes) ? data.sizes : [],
+          gallery: Array.isArray(data.gallery) ? data.gallery : [],
+        } as Product;
+      });
 
-      // Sort: trending first, then flash sale, then by rating
       list.sort((a, b) => {
         if (a.isTrending && !b.isTrending) return -1;
         if (!a.isTrending && b.isTrending) return 1;

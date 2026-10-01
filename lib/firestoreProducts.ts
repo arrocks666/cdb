@@ -1,5 +1,5 @@
-// lib/firestoreProducts.ts
-// Firestore CRUD for products
+// lib/firestoreOrders.ts
+// Firestore CRUD for orders.
 
 import {
   collection,
@@ -8,120 +8,173 @@ import {
   getDocs,
   setDoc,
   updateDoc,
-  deleteDoc,
   query,
   where,
   orderBy,
-  limit,
   serverTimestamp,
-  writeBatch,
-  DocumentData,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type FirestoreProduct = {
-  id: string;
-  title: string;
-  subtitle?: string;
+export type OrderStatus =
+  | "placed"
+  | "confirmed"
+  | "processing"
+  | "shipped"
+  | "arrived"
+  | "out-for-delivery"
+  | "delivered";
+
+export type OrderItem = {
+  productId: string;
+  colorId: string;
+  colorLabel?: string;
+  size?: string;
+  quantity: number;
   price: number;
-  oldPrice: number;
-  discount: number;
-  rating: number;
-  reviews: number;
-  image: string;
-  gallery: string[];
-  colors: { id: string; label: string; hex: string }[];
-  inStock: boolean;
-  stockCount: number;
-  features: { icon: string; label: string }[];
-  description: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  sourceUrl?: string;
-  moq?: number;
-  supplierName?: string;
-  priceOriginalCny?: number;
+  costPrice?: number;
+  title?: string;
+  image?: string;
+  adminPhoto?: string;
   isLive?: boolean;
-  isFlashSale?: boolean;
-  isTrending?: boolean;
-  isFeatured?: boolean;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-  views?: number;
 };
 
-const COLLECTION = "products";
+export type Order = {
+  id: string;
+  userId: string;
+  userPhone?: string;
+  createdAt: number;
+  createdAtServer?: unknown;
+  updatedAt?: unknown;
+  items: OrderItem[];
+  subtotal: number;
+  shipping: number;
+  total: number;
+  costTotal?: number;
+  profit?: number;
+  paymentMethod: string;
+  status: OrderStatus;
+  address: {
+    name: string;
+    phone: string;
+    address: string;
+    district: string;
+  };
+  transactionId?: string;
+  paidAmount?: number;
+  dueAmount?: number;
+  paymentScreenshots?: string[];
+  chinaOrderId?: string;
+  adminNotes?: string;
+  statusUpdatedAt?: unknown;
+};
 
-export async function getAllProducts(): Promise<FirestoreProduct[]> {
-  try {
-    const q = query(collection(db, COLLECTION));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<FirestoreProduct, "id">;
-      return { ...data, id: d.id };
-    });
-  } catch (err) {
-    console.error("Error fetching products:", err);
-    return [];
-  }
+const COLLECTION = "orders";
+
+export async function createOrder(
+  draft: Omit<Order, "id" | "createdAt" | "createdAtServer" | "status">
+): Promise<string> {
+  const ref = doc(collection(db, COLLECTION));
+  const orderId = ref.id;
+
+  const data: Record<string, unknown> = {
+    ...draft,
+    id: orderId,
+    createdAt: Date.now(),
+    createdAtServer: serverTimestamp(),
+    status: "placed",
+    statusUpdatedAt: serverTimestamp(),
+  };
+
+  await setDoc(ref, data);
+  return orderId;
 }
 
-export async function getProduct(id: string): Promise<FirestoreProduct | null> {
+export async function getOrder(id: string): Promise<Order | null> {
   try {
     const ref = doc(db, COLLECTION, id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
-    const data = snap.data() as Omit<FirestoreProduct, "id">;
-    return { ...data, id: snap.id };
+    return { id: snap.id, ...(snap.data() as Omit<Order, "id">) };
   } catch (err) {
-    console.error("Error fetching product:", err);
+    console.error("Error fetching order:", err);
     return null;
   }
 }
 
-export async function getProductsByCategory(
-  categoryId: string
-): Promise<FirestoreProduct[]> {
+export async function getUserOrders(userId: string): Promise<Order[]> {
   try {
     const q = query(
       collection(db, COLLECTION),
-      where("categoryId", "==", categoryId)
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<FirestoreProduct, "id">;
-      return { ...data, id: d.id };
-    });
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
   } catch (err) {
-    console.error("Error fetching category products:", err);
+    console.error("Error fetching user orders:", err);
     return [];
   }
 }
 
-export async function saveProduct(product: FirestoreProduct): Promise<void> {
-  const ref = doc(db, COLLECTION, product.id);
-  const existing = await getDoc(ref);
-
-  const data: DocumentData = {
-    ...product,
-    updatedAt: serverTimestamp(),
-  };
-
-  if (!existing.exists()) {
-    data.createdAt = serverTimestamp();
-    data.views = product.views ?? 0;
+export async function getAllOrders(since?: number): Promise<Order[]> {
+  try {
+    const cutoff = since ?? Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const q = query(
+      collection(db, COLLECTION),
+      where("createdAt", ">=", cutoff),
+      orderBy("createdAt", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
+  } catch (err) {
+    console.error("Error fetching all orders:", err);
+    return [];
   }
-
-  if (existing.exists() && existing.data().createdAt) {
-    data.createdAt = existing.data().createdAt;
-  }
-
-  await setDoc(ref, data, { merge: true });
 }
 
-export async function updateProductFields(
+export async function getOrdersBetween(
+  fromMs: number,
+  toMs: number
+): Promise<Order[]> {
+  try {
+    const q = query(
+      collection(db, COLLECTION),
+      where("createdAt", ">=", fromMs),
+      where("createdAt", "<=", toMs),
+      orderBy("createdAt", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
+  } catch (err) {
+    console.error("Error fetching orders between dates:", err);
+    return [];
+  }
+}
+
+export async function updateOrderStatus(
   id: string,
-  fields: Partial<FirestoreProduct>
+  status: OrderStatus
+): Promise<void> {
+  const ref = doc(db, COLLECTION, id);
+  await updateDoc(ref, {
+    status,
+    statusUpdatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function updateOrderFields(
+  id: string,
+  fields: Partial<Order>
 ): Promise<void> {
   const ref = doc(db, COLLECTION, id);
   await updateDoc(ref, {
@@ -130,136 +183,80 @@ export async function updateProductFields(
   });
 }
 
-export async function deleteProduct(id: string): Promise<void> {
-  await deleteDoc(doc(db, COLLECTION, id));
+export async function setOrderCosts(
+  id: string,
+  order: Order,
+  itemCosts: Record<number, number>
+): Promise<void> {
+  const updatedItems = order.items.map((item, idx) => ({
+    ...item,
+    costPrice: itemCosts[idx] ?? item.costPrice ?? 0,
+  }));
+
+  const costTotal = updatedItems.reduce(
+    (sum, it) => sum + (it.costPrice ?? 0) * it.quantity,
+    0
+  );
+  const profit = order.total - costTotal - order.shipping;
+
+  const ref = doc(db, COLLECTION, id);
+  await updateDoc(ref, {
+    items: updatedItems,
+    costTotal,
+    profit,
+    updatedAt: serverTimestamp(),
+  });
 }
 
-export async function bulkImportProducts(
-  products: FirestoreProduct[]
-): Promise<{ imported: number; failed: number }> {
-  let imported = 0;
-  let failed = 0;
-  const BATCH_SIZE = 400;
+export function aggregateOrders(orders: Order[]): {
+  count: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+} {
+  let revenue = 0;
+  let cost = 0;
+  let profit = 0;
 
-  for (let i = 0; i < products.length; i += BATCH_SIZE) {
-    const chunk = products.slice(i, i + BATCH_SIZE);
-    const batch = writeBatch(db);
-
-    for (const product of chunk) {
-      try {
-        const ref = doc(db, COLLECTION, product.id);
-        batch.set(
-          ref,
-          {
-            ...product,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            views: 0,
-          },
-          { merge: true }
-        );
-        imported++;
-      } catch (err) {
-        console.error(`Failed to batch product ${product.id}:`, err);
-        failed++;
-      }
-    }
-
-    try {
-      await batch.commit();
-    } catch (err) {
-      console.error(`Batch commit failed at index ${i}:`, err);
-      failed += chunk.length;
-      imported -= chunk.length;
-    }
+  for (const o of orders) {
+    revenue += o.total;
+    if (typeof o.costTotal === "number") cost += o.costTotal;
+    if (typeof o.profit === "number") profit += o.profit;
   }
 
-  return { imported, failed };
+  return { count: orders.length, revenue, cost, profit };
 }
 
-export async function getFlashSaleProducts(): Promise<FirestoreProduct[]> {
-  try {
-    const q = query(
-      collection(db, COLLECTION),
-      where("isFlashSale", "==", true),
-      limit(20)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<FirestoreProduct, "id">;
-      return { ...data, id: d.id };
-    });
-  } catch (err) {
-    console.error("Error fetching flash sale:", err);
-    return [];
-  }
+export const STATUS_ORDER: OrderStatus[] = [
+  "placed",
+  "confirmed",
+  "processing",
+  "shipped",
+  "arrived",
+  "out-for-delivery",
+  "delivered",
+];
+
+export const STATUS_LABELS: Record<OrderStatus, string> = {
+  placed: "Order Placed",
+  confirmed: "Payment Confirmed",
+  processing: "Processing in China",
+  shipped: "Shipped to Bangladesh",
+  arrived: "Arrived in Bangladesh",
+  "out-for-delivery": "Out for Delivery",
+  delivered: "Delivered",
+};
+
+export function startOfDay(d = new Date()): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-export async function getTrendingProducts(): Promise<FirestoreProduct[]> {
-  try {
-    const q = query(
-      collection(db, COLLECTION),
-      where("isTrending", "==", true),
-      limit(50)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<FirestoreProduct, "id">;
-      return { ...data, id: d.id };
-    });
-  } catch (err) {
-    console.error("Error fetching trending:", err);
-    return [];
-  }
+export function startOfWeek(d = new Date()): number {
+  const day = d.getDay();
+  const diff = d.getDate() - day;
+  return new Date(d.getFullYear(), d.getMonth(), diff).getTime();
 }
 
-export async function getTopViewedProducts(
-  n: number = 10,
-  onlyLive: boolean = false
-): Promise<FirestoreProduct[]> {
-  try {
-    const constraints: any[] = [orderBy("views", "desc"), limit(n)];
-    if (onlyLive) {
-      constraints.unshift(where("isLive", "==", true));
-    } else {
-      constraints.unshift(where("isLive", "==", false));
-    }
-
-    const q = query(collection(db, COLLECTION), ...constraints);
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<FirestoreProduct, "id">;
-      return { ...data, id: d.id };
-    });
-  } catch (err) {
-    console.error("Error fetching top viewed:", err);
-    return [];
-  }
-}
-
-export async function getProductsByIds(
-  ids: string[]
-): Promise<FirestoreProduct[]> {
-  if (ids.length === 0) return [];
-  try {
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += 30) {
-      chunks.push(ids.slice(i, i + 30));
-    }
-
-    const allResults: FirestoreProduct[] = [];
-    for (const chunk of chunks) {
-      const q = query(collection(db, COLLECTION), where("__name__", "in", chunk));
-      const snap = await getDocs(q);
-      snap.docs.forEach((d) => {
-        const data = d.data() as Omit<FirestoreProduct, "id">;
-        allResults.push({ ...data, id: d.id });
-      });
-    }
-
-    return allResults;
-  } catch (err) {
-    console.error("Error fetching products by IDs:", err);
-    return [];
-  }
+export function startOfMonth(d = new Date()): number {
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
 }

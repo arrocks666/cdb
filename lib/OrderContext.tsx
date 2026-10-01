@@ -33,6 +33,8 @@ export type OrderStatus =
 export type OrderItem = {
   productId: string;
   colorId: string;
+  colorLabel?: string;
+  size?: string;
   quantity: number;
   price: number;
   costPrice?: number;
@@ -40,6 +42,27 @@ export type OrderItem = {
   image?: string;
   adminPhoto?: string;
   isLive?: boolean;
+};
+
+// NEW: individual payment row
+export type OrderPayment = {
+  id: string;
+  amount: number;
+  date: number;
+  note?: string;
+  addedBy?: string;
+};
+
+// NEW: admin-managed charges shown after arrival
+export type OrderCharges = {
+  chinaLocalCourier?: number;
+  shippingCharge?: number;
+  bdCourier?: number;
+  shippingWeightKg?: number;
+  shippingRatePerKg?: number;
+  showChinaLocalCourier?: boolean;
+  showShippingCharge?: boolean;
+  showBdCourier?: boolean;
 };
 
 export type Order = {
@@ -64,16 +87,17 @@ export type Order = {
     district: string;
   };
 
-  // Payment tracking
   transactionId?: string;
   paidAmount?: number;
   dueAmount?: number;
   paymentScreenshots?: string[];
+  payments?: OrderPayment[];
 
-  // Admin-only
   chinaOrderId?: string;
   adminNotes?: string;
   statusUpdatedAt?: unknown;
+
+  charges?: OrderCharges;
 };
 
 type OrderContextType = {
@@ -173,6 +197,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const paidAmount = draft.paidAmount ?? total;
     const dueAmount = Math.max(0, total - paidAmount);
 
+    // Initialize payment history with the first payment (if any)
+    const initialPayments: OrderPayment[] = [];
+    if (paidAmount > 0) {
+      initialPayments.push({
+        id: `p_${Date.now()}_init`,
+        amount: paidAmount,
+        date: Date.now(),
+        note: draft.transactionId ? `TXN: ${draft.transactionId}` : undefined,
+        addedBy: "customer",
+      });
+    }
+
     const newOrder: Order = {
       ...draft,
       id: orderId,
@@ -182,6 +218,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       status: "placed",
       paidAmount,
       dueAmount,
+      payments: initialPayments,
     };
 
     const clean = stripUndefined({

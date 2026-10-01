@@ -1,5 +1,5 @@
-// lib/live-search.ts
-// Live 1688 search using zen-studio/1688-wholesale-scraper with caching.
+// lib/zen1688.ts
+// Wrapper around zen-studio/1688-wholesale-scraper.
 
 import * as dotenv from "dotenv";
 import * as fs from "fs";
@@ -15,68 +15,18 @@ import { translateColorName } from "./colorTranslations";
 import { computePrice, DEFAULT_PRICING } from "./pricing";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
-const APIFY_1688_ACTOR_ID =
+const ZEN_ACTOR_ID =
   process.env.APIFY_1688_SCRAPER_ID || "zen-studio~1688-wholesale-scraper";
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN");
-if (!APIFY_1688_ACTOR_ID) throw new Error("Missing APIFY_1688_ACTOR_ID");
+if (!ZEN_ACTOR_ID) throw new Error("Missing APIFY_1688_SCRAPER_ID");
 
-export type LiveProductColor = {
-  id: string;
-  label: string;
-  hex: string;
-  image?: string;
-};
-
-export type LiveProductVariant = {
-  colorId?: string;
-  size?: string;
-  priceCny?: number;
-  price?: number;
-  stock?: number;
-  image?: string;
-  skuId?: string;
-};
-
-export type LiveProduct = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  price: number;
-  priceMax?: number;
-  priceCnyMin?: number;
-  priceCnyMax?: number;
-  oldPrice: number;
-  discount: number;
-  rating: number;
-  reviews: number;
-  image: string;
-  gallery: string[];
-  colors: LiveProductColor[];
-  sizes: string[];
-  variants?: LiveProductVariant[];
-  specs?: { name: string; value: string }[];
-  videoUrl?: string;
-  inStock: boolean;
-  stockCount: number;
-  features: { icon: string; label: string }[];
-  description: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  sourceUrl?: string;
-  moq?: number;
-  supplierName?: string;
-  priceOriginalCny?: number;
-  isLive?: boolean;
-  weightKg?: number;
-};
-
-type ZenSkuProp = {
+export type ZenSkuProp = {
   name: string;
   values: Array<{ name: string; imageUrl?: string | null }>;
 };
 
-type ZenVariant = {
+export type ZenVariant = {
   specs: string;
   skuId: string;
   price: number;
@@ -87,16 +37,18 @@ type ZenVariant = {
   weight?: number | null;
 };
 
-type ZenProduct = {
+export type ZenProduct = {
   offerId: string;
   title: string;
   detailUrl: string;
   price: { min: number; max: number; currency: string };
   images: string[];
   videoUrl?: string;
+  skuImages?: Array<{ name: string; imgUrl: string }>;
   province?: string;
   city?: string;
   saledCount?: number;
+  saledCountStr?: string;
   reviewSummary?: {
     rating?: number;
     reviewCount?: number;
@@ -112,9 +64,58 @@ type ZenProduct = {
   };
   specs?: Array<{ name: string; value: string }>;
   skuDetails?: {
+    priceRange?: string;
+    totalVariants?: number;
     properties?: ZenSkuProp[];
     variants?: ZenVariant[];
   };
+  descriptionImages?: string[];
+  descriptionHtml?: string | null;
+  categoryName?: string;
+  scrapedAt?: string;
+};
+
+export type ZenSiteProduct = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  price: number;
+  priceMax?: number;
+  priceCnyMin?: number;
+  priceCnyMax?: number;
+  oldPrice: number;
+  discount: number;
+  rating: number;
+  reviews: number;
+  image: string;
+  gallery: string[];
+  colors: { id: string; label: string; hex: string; image?: string }[];
+  sizes: string[];
+  variants?: {
+    colorId?: string;
+    size?: string;
+    priceCny?: number;
+    price?: number;
+    stock?: number;
+    image?: string;
+    skuId?: string;
+  }[];
+  specs?: { name: string; value: string }[];
+  videoUrl?: string;
+  inStock: boolean;
+  stockCount: number;
+  features: { icon: string; label: string }[];
+  description: string;
+  categoryId?: string;
+  subcategoryId?: string;
+  sourceUrl: string;
+  moq: number;
+  supplierName: string;
+  priceOriginalCny: number;
+  isLive?: boolean;
+  weightKg?: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 function hexFromLabel(label: string): string {
@@ -186,7 +187,7 @@ async function translateSpecs(
   if (!specs || specs.length === 0) return [];
   const out: { name: string; value: string }[] = [];
 
-  const results = await Promise.all(
+  const translations = await Promise.all(
     specs.map(async (s) => {
       if (s.name === "颜色" || s.name === "尺码") return null;
       const [nameEn, valueEn] = await Promise.all([
@@ -200,13 +201,45 @@ async function translateSpecs(
     })
   );
 
-  for (const r of results) if (r) out.push(r);
+  for (const t of translations) {
+    if (t) out.push(t);
+  }
   return out;
 }
 
-async function transformLiveProduct(
-  raw: ZenProduct
-): Promise<LiveProduct | null> {
+async function callZen(
+  input: Record<string, unknown>,
+  timeoutSec: number = 300
+): Promise<ZenProduct[]> {
+  const url = `https://api.apify.com/v2/acts/${ZEN_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=${timeoutSec}`;
+
+  console.log(`[zen] calling actor ${ZEN_ACTOR_ID}`);
+  console.log(`[zen] input: ${JSON.stringify(input).slice(0, 300)}`);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Zen actor failed (${response.status}): ${text}`);
+  }
+
+  const items = (await response.json()) as ZenProduct[];
+  console.log(`[zen] actor returned ${items.length} items`);
+  if (items.length > 0) {
+    console.log(`[zen] first item offerId=${items[0].offerId} title=${String(items[0].title).slice(0, 40)}`);
+  }
+  return items;
+}
+
+async function transformZenProduct(
+  raw: ZenProduct,
+  categoryId?: string,
+  subcategoryId?: string
+): Promise<ZenSiteProduct | null> {
   if (!raw.price || !raw.price.min || raw.price.min <= 0) return null;
   if (!raw.images || raw.images.length === 0) return null;
   if (!raw.title) return null;
@@ -217,12 +250,12 @@ async function transformLiveProduct(
   const priceCnyMin = raw.price.min;
   const priceCnyMax = raw.price.max > raw.price.min ? raw.price.max : undefined;
 
-  const priceBdtMin = computePrice(priceCnyMin, DEFAULT_PRICING).sellingBdt;
-  const priceBdtMax = priceCnyMax
+  const priceMin = computePrice(priceCnyMin, DEFAULT_PRICING).sellingBdt;
+  const priceMax = priceCnyMax
     ? computePrice(priceCnyMax, DEFAULT_PRICING).sellingBdt
     : undefined;
 
-  const oldPrice = Math.round(priceBdtMin * 1.25);
+  const oldPrice = Math.round(priceMin * 1.3);
   const moq = raw.minOrderQuantity ?? 1;
 
   const [locationEn, supplierEn, colors, specs] = await Promise.all([
@@ -263,7 +296,12 @@ async function transformLiveProduct(
             image: v.imageUrl ?? undefined,
           };
         })
-        .filter(Boolean) as LiveProductColor[];
+        .filter(Boolean) as {
+        id: string;
+        label: string;
+        hex: string;
+        image?: string;
+      }[];
     })(),
     translateSpecs(raw.specs),
   ]);
@@ -282,7 +320,7 @@ async function transformLiveProduct(
   }
 
   const zenVariants = raw.skuDetails?.variants ?? [];
-  const variants: LiveProductVariant[] = zenVariants.map((v) => {
+  const variants = zenVariants.map((v) => {
     const parts = v.specs.split(">").map((p) => p.trim());
     const rawColor = parts[0] ?? "";
     const rawSize = parts[1] ?? "";
@@ -321,11 +359,11 @@ async function transformLiveProduct(
   features.push({ icon: "📦", label: `MOQ ${moq}` });
 
   return {
-    id: `live-${raw.offerId}`,
+    id: raw.offerId,
     title: englishTitle.slice(0, 100),
     subtitle,
-    price: priceBdtMin,
-    priceMax: priceBdtMax,
+    price: priceMin,
+    priceMax,
     priceCnyMin,
     priceCnyMax,
     oldPrice,
@@ -345,89 +383,68 @@ async function transformLiveProduct(
     stockCount: raw.stock ?? 999,
     features,
     description: englishTitle,
+    categoryId,
+    subcategoryId,
     sourceUrl: raw.detailUrl,
     moq,
     supplierName: supplierEn || locationEn || "China",
     priceOriginalCny: priceCnyMin,
-    isLive: true,
     weightKg: raw.unitWeight ?? undefined,
   };
 }
 
-function sortByBestSelling(items: ZenProduct[]): ZenProduct[] {
-  return [...items].sort((a, b) => {
-    const saleA = a.saledCount ?? 0;
-    const saleB = b.saledCount ?? 0;
-    return saleB - saleA;
-  });
-}
-
-async function callZenActor(
-  input: Record<string, unknown>,
-  timeoutSec: number = 180
-): Promise<ZenProduct[]> {
-  const url = `https://api.apify.com/v2/acts/${APIFY_1688_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=${timeoutSec}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Apify zen-studio failed (${response.status}): ${text}`);
-  }
-
-  return (await response.json()) as ZenProduct[];
-}
-
-export async function liveSearch1688(
+export async function scrapeZenByKeyword(
   keyword: string,
-  maxResults: number = 3
-): Promise<LiveProduct[]> {
-  const { getCachedSearch, saveCachedSearch } = await import("./searchCache");
-  const cached = await getCachedSearch(keyword);
-  if (cached && cached.length > 0) {
-    console.log(`[cache HIT] ${keyword}`);
-    return cached.slice(0, maxResults);
-  }
-  console.log(`[cache MISS] ${keyword} — calling Apify`);
-
-  const items = await callZenActor({
-    searchKeywords: [keyword],
+  maxResults: number = 10
+): Promise<ZenSiteProduct[]> {
+  const items = await callZen({
+    keywords: [keyword],
     maxResults,
     includeSkuVariants: true,
+    includeSkuDetails: true,
     includeDescriptionHtml: false,
+    includeSupplierIntelligence: false,
+    proxyConfiguration: {
+      useApifyProxy: true,
+      apifyProxyGroups: ["RESIDENTIAL"],
+    },
+    proxyCountryMode: "rotate",
   });
 
   const valid = items.filter(
     (i) => i.price && i.price.min > 0 && i.images?.length > 0 && i.title
   );
 
-  const sorted = sortByBestSelling(valid);
-  const transformed = await Promise.all(sorted.map(transformLiveProduct));
-  const final = transformed.filter(Boolean) as LiveProduct[];
-
-  if (final.length > 0) {
-    await saveCachedSearch(keyword, final);
-  }
-
-  return final;
+  const out = await Promise.all(valid.map((p) => transformZenProduct(p)));
+  return out.filter(Boolean) as ZenSiteProduct[];
 }
 
-export async function scrapeByOfferIds1688(
+export async function scrapeZenByOfferIds(
   offerIds: string[]
-): Promise<LiveProduct[]> {
+): Promise<ZenSiteProduct[]> {
   if (offerIds.length === 0) return [];
 
-  const items = await callZenActor({
+  const items = await callZen({
     offerIds,
     maxResults: offerIds.length,
     includeSkuVariants: true,
+    includeSkuDetails: true,
     includeDescriptionHtml: false,
+    includeSupplierIntelligence: false,
+    proxyConfiguration: {
+      useApifyProxy: true,
+      apifyProxyGroups: ["RESIDENTIAL"],
+    },
+    proxyCountryMode: "rotate",
   });
 
-  const transformed = await Promise.all(items.map(transformLiveProduct));
-  return transformed.filter(Boolean) as LiveProduct[];
+  const out = await Promise.all(items.map((p) => transformZenProduct(p)));
+  return out.filter(Boolean) as ZenSiteProduct[];
+}
+
+export async function scrapeZenByOfferId(
+  offerId: string
+): Promise<ZenSiteProduct | null> {
+  const results = await scrapeZenByOfferIds([offerId]);
+  return results[0] ?? null;
 }

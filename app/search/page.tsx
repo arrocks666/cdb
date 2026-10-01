@@ -6,61 +6,115 @@ import Link from "next/link";
 import { useProducts } from "@/lib/ProductsContext";
 import ProductCard from "@/components/ProductCard";
 import LiveProductCard from "@/components/LiveProductCard";
+import ProductSkeleton from "@/components/ProductSkeleton";
 import { categories } from "@/lib/categories";
+import { LiveProduct } from "@/lib/live-search";
 
-function SkeletonCard() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm">
-      <div className="relative aspect-square m-2 overflow-hidden rounded-md bg-bg-input">
-        <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-      </div>
-      <div className="p-2.5 md:p-3">
-        <div className="relative h-3 w-full overflow-hidden rounded bg-bg-input">
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </div>
-        <div className="relative mt-1.5 h-3 w-3/4 overflow-hidden rounded bg-bg-input">
-          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-        </div>
-      </div>
-    </div>
-  );
-}
+const SKELETON_SLOTS = 3;
 
 function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
   const isImageSearch = searchParams.get("image") === "true";
+  const jobId = searchParams.get("jobId") ?? "";
 
   const { products } = useProducts();
 
   const [query, setQuery] = useState(urlQuery);
   const [submittedQuery, setSubmittedQuery] = useState(urlQuery);
-  const [imageResults, setImageResults] = useState<any[]>([]);
+  const [imageResults, setImageResults] = useState<LiveProduct[]>([]);
+  const [totalExpected, setTotalExpected] = useState<number>(SKELETON_SLOTS);
+  const [jobStatus, setJobStatus] = useState<
+    "idle" | "searching" | "loading" | "done" | "error"
+  >("idle");
+  const [jobError, setJobError] = useState<string | null>(null);
   const [needsCategoryPick, setNeedsCategoryPick] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync input when URL changes externally
   useEffect(() => {
     setQuery(urlQuery);
     setSubmittedQuery(urlQuery);
   }, [urlQuery]);
 
-  // Load image search results from sessionStorage
   useEffect(() => {
-    if (isImageSearch) {
+    if (!isImageSearch || !jobId) return;
+
+    setJobStatus("searching");
+    setJobError(null);
+    setImageResults([]);
+    setTotalExpected(SKELETON_SLOTS);
+
+    let stopped = false;
+
+    const stopPolling = () => {
+      stopped = true;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+
+    const poll = async () => {
+      if (stopped) return;
       try {
-        const raw = sessionStorage.getItem("image_search_results");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          setImageResults(parsed);
+        const res = await fetch(`/api/image-search/status?jobId=${jobId}`);
+
+        // 404 = server restarted, job gone. Stop polling.
+        if (res.status === 404) {
+          stopPolling();
+          setJobStatus("error");
+          setJobError("Search session expired. Please search again.");
+          return;
+        }
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const incoming: LiveProduct[] = data.products ?? [];
+
+        if (incoming.length > 0) setImageResults(incoming);
+        if (data.totalExpected && data.totalExpected > 0) {
+          setTotalExpected(data.totalExpected);
+        }
+
+        if (data.status === "searching") {
+          setJobStatus("searching");
+        } else if (data.status === "loading") {
+          setJobStatus("loading");
+        } else if (data.status === "done") {
+          stopPolling();
+          setJobStatus("done");
+          if (incoming.length === 0) {
+            setJobError(
+              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
+            );
+          }
+        } else if (data.status === "error") {
+          stopPolling();
+          setJobStatus("error");
+          setJobError(
+            data.error ||
+              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
+          );
         }
       } catch (err) {
-        console.error("Failed to load image results:", err);
+        console.warn("Poll error:", err);
       }
-    }
-  }, [isImageSearch]);
+    };
 
-  // Local filtered results — instant from Firestore
+    poll();
+    pollRef.current = setInterval(poll, 2000);
+
+    return () => {
+      stopped = true;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [isImageSearch, jobId]);
+
   const localResults = useMemo(() => {
     const q = submittedQuery.trim().toLowerCase();
     if (!q) return [];
@@ -79,19 +133,30 @@ function SearchContent() {
     router.replace(`/search?q=${encodeURIComponent(trimmed)}`, { scroll: false });
   };
 
+  const handleClearImageSearch = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    router.replace("/search", { scroll: false });
+  };
+
   const hasLocalResults = localResults.length > 0;
   const hasImageResults = imageResults.length > 0;
   const hasSubmitted = submittedQuery.trim().length >= 2;
+  const isSearching = jobStatus === "searching" || jobStatus === "loading";
 
   const showHitSearchHint =
     !isImageSearch &&
     query.trim().length >= 2 &&
     query.trim().toLowerCase() !== submittedQuery.trim().toLowerCase();
 
-  const isEmpty =
-    !isImageSearch &&
-    hasSubmitted &&
-    !hasLocalResults;
+  const isEmpty = !isImageSearch && hasSubmitted && !hasLocalResults;
+
+  const skeletonCount = Math.max(
+    0,
+    Math.min(SKELETON_SLOTS, totalExpected) - imageResults.length
+  );
 
   return (
     <div className="min-h-screen bg-bg-secondary">
@@ -102,7 +167,6 @@ function SearchContent() {
         }
       `}</style>
 
-      {/* Search bar */}
       <div className="sticky top-[56px] z-40 border-b border-border-subtle bg-white shadow-sm md:top-[60px]">
         <div className="mx-auto flex max-w-[1800px] items-center gap-2 px-3 py-3 md:px-4">
           <Link
@@ -161,7 +225,6 @@ function SearchContent() {
       </div>
 
       <div className="mx-auto max-w-[1800px] px-3 py-3 md:px-4 md:py-5">
-        {/* IMAGE SEARCH RESULTS */}
         {isImageSearch && (
           <>
             <div className="mb-4 flex items-center justify-between gap-2 rounded-lg border border-gold-primary/30 bg-bg-orange px-4 py-3">
@@ -171,35 +234,41 @@ function SearchContent() {
                   <circle cx="12" cy="13" r="4" />
                 </svg>
                 <span className="text-sm font-semibold text-text-primary md:text-base">
-                  Image Search Results
+                  {isSearching && imageResults.length === 0
+                    ? "Searching for the best match..."
+                    : hasImageResults
+                    ? `Image Search Results (${imageResults.length}${
+                        totalExpected > 0 ? `/${totalExpected}` : ""
+                      })`
+                    : "Image Search"}
                 </span>
+                {isSearching && imageResults.length > 0 && (
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+                )}
               </div>
               <button
-                onClick={() => {
-                  sessionStorage.removeItem("image_search_results");
-                  router.replace("/search", { scroll: false });
-                }}
+                onClick={handleClearImageSearch}
                 className="text-xs font-semibold text-gold-primary underline"
               >
                 Clear
               </button>
             </div>
 
-            {hasImageResults ? (
-              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
-                {imageResults.map((p: any) => (
-                  <LiveProductCard key={p.id} product={p} />
-                ))}
+            {isSearching && (
+              <div className="mb-3 text-xs text-text-secondary md:text-sm">
+                {imageResults.length === 0 &&
+                  "Please be patient, this can take up to 2 minutes."}
+                {imageResults.length > 0 &&
+                  `✓ ${imageResults.length} found, loading others...`}
               </div>
-            ) : (
+            )}
+
+            {jobError && !isSearching && (
               <div className="mt-16 flex flex-col items-center text-center">
                 <div className="text-6xl opacity-40">📷</div>
-                <h3 className="mt-4 text-lg font-bold text-text-primary">
-                  No matches found
+                <h3 className="mt-4 text-sm font-bold text-text-primary md:text-base">
+                  {jobError}
                 </h3>
-                <p className="mt-1 max-w-xs text-xs text-text-muted">
-                  Try a clearer photo or pick a category below
-                </p>
                 <button
                   onClick={() => setNeedsCategoryPick(true)}
                   className="mt-5 rounded-full bg-gold-primary px-6 py-2.5 text-xs font-semibold text-white shadow-orange-glow"
@@ -208,29 +277,43 @@ function SearchContent() {
                 </button>
               </div>
             )}
+
+            {(hasImageResults || isSearching) && !jobError && (
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
+                {imageResults.map((p) => (
+                  <LiveProductCard key={p.id} product={p} />
+                ))}
+                {Array.from({ length: skeletonCount }).map((_, i) => (
+                  <ProductSkeleton key={`skel-${i}`} />
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        {/* LIVE SEARCH HINT */}
         {!isImageSearch && showHitSearchHint && (
           <div className="mb-4 flex flex-col items-center justify-center rounded-lg border border-dashed border-border-subtle bg-white py-8 text-center">
             <div className="text-4xl opacity-60">🔍</div>
             <p className="mt-3 text-sm font-medium text-text-primary md:text-base">
-              Press <span className="font-bold text-gold-primary">Search</span> to find "{query}"
+              Press <span className="font-bold text-gold-primary">Search</span>{" "}
+              to find "{query}"
             </p>
           </div>
         )}
 
-        {/* RESULTS COUNT */}
         {!isImageSearch && hasSubmitted && (
           <p className="mb-3 text-xs text-text-secondary md:text-sm">
-            Showing <span className="font-bold text-gold-primary">{localResults.length}</span>{" "}
+            Showing{" "}
+            <span className="font-bold text-gold-primary">
+              {localResults.length}
+            </span>{" "}
             {localResults.length === 1 ? "result" : "results"} for{" "}
-            <span className="font-semibold text-text-primary">"{submittedQuery}"</span>
+            <span className="font-semibold text-text-primary">
+              "{submittedQuery}"
+            </span>
           </p>
         )}
 
-        {/* LOCAL RESULTS */}
         {!isImageSearch && hasLocalResults && (
           <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
             {localResults.map((p) => (
@@ -239,7 +322,6 @@ function SearchContent() {
           </div>
         )}
 
-        {/* EMPTY */}
         {isEmpty && (
           <div className="mt-16 flex flex-col items-center text-center">
             <div className="text-6xl opacity-40">🔍</div>
@@ -247,7 +329,8 @@ function SearchContent() {
               No products found
             </h3>
             <p className="mt-1 max-w-xs text-xs text-text-muted">
-              We don't have "{submittedQuery}" in our store yet. Try a different keyword.
+              We don't have "{submittedQuery}" in our store yet. Try a
+              different keyword.
             </p>
             <button
               onClick={() => {
@@ -262,7 +345,6 @@ function SearchContent() {
           </div>
         )}
 
-        {/* INITIAL */}
         {!isImageSearch && !hasSubmitted && !showHitSearchHint && (
           <div className="mt-16 flex flex-col items-center text-center">
             <div className="text-6xl opacity-40">🔍</div>
@@ -276,7 +358,6 @@ function SearchContent() {
         )}
       </div>
 
-      {/* CATEGORY PICKER MODAL */}
       {needsCategoryPick && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -300,7 +381,6 @@ function SearchContent() {
                   <button
                     key={cat.id}
                     onClick={() => {
-                      sessionStorage.removeItem("image_search_results");
                       setNeedsCategoryPick(false);
                       router.push(`/categories/${cat.id}`);
                     }}
@@ -329,7 +409,11 @@ function SearchContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-text-muted">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-text-muted">Loading…</div>
+      }
+    >
       <SearchContent />
     </Suspense>
   );

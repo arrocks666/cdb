@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Product } from "@/lib/ProductsContext";
 import { formatBDT } from "@/lib/data";
 import { useWishlist } from "@/lib/WishlistContext";
-import { useCart } from "@/lib/CartContext";
 
 function hasChinese(text: string | undefined): boolean {
   if (!text) return false;
@@ -14,22 +13,13 @@ function hasChinese(text: string | undefined): boolean {
 
 export default function ProductCard({ product }: { product: Product }) {
   const wishlist = useWishlist();
-  const cart = useCart();
   const inWishlist = wishlist.has(product.id);
   const [imgFailed, setImgFailed] = useState(false);
-  const [added, setAdded] = useState(false);
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleGoToProduct = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    try {
-      const defaultColorId = product.colors?.[0]?.id ?? "default";
-      cart.add(product.id, defaultColorId, 1);
-      setAdded(true);
-      setTimeout(() => setAdded(false), 1500);
-    } catch (err) {
-      console.error("Add to cart failed:", err);
-    }
+    window.location.href = `/product/${product.id}`;
   };
 
   const showImage = product.image && !imgFailed;
@@ -108,29 +98,18 @@ export default function ProductCard({ product }: { product: Product }) {
         </div>
       </Link>
 
-      {/* Fixed-height button footer for consistent alignment */}
       <div className="mt-auto px-2.5 pb-2.5 md:px-3 md:pb-3">
         <button
-          onClick={handleAddToCart}
+          onClick={handleGoToProduct}
           disabled={!product.inStock}
-          className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-semibold text-white transition md:text-[12px] ${
-            added
-              ? "bg-success"
-              : "bg-gold-primary hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40"
-          }`}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gold-primary py-2 text-[11px] font-semibold text-white transition hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40 md:text-[12px]"
         >
-          {added ? (
-            <>✓ Added</>
-          ) : (
-            <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
-                <circle cx="9" cy="21" r="1" />
-                <circle cx="20" cy="21" r="1" />
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-              </svg>
-              {product.inStock ? "Add to Cart" : "Out of Stock"}
-            </>
-          )}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+            <circle cx="9" cy="21" r="1" />
+            <circle cx="20" cy="21" r="1" />
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+          </svg>
+          {product.inStock ? "Order Now" : "Out of Stock"}
         </button>
       </div>
     </div>

@@ -1,47 +1,55 @@
 // lib/image-search.ts
+// Image search pipeline:
+//   1. crawleast → 1688 offerIds
+//   2. pizani/1688-product-scraper → full product with variants
+//   3. Merge → LiveProduct
+
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 
-import { translateToEnglish } from "./translation";
-import { LiveProduct } from "./live-search";
+import { fetchPizani1688 } from "./pizani1688";
+import type { PizaniProduct } from "./pizani1688";
+import {
+  createJob,
+  updateJob,
+  pushProduct,
+  type ImageSearchJob,
+} from "./imageSearchJobs";
+import type { LiveProduct } from "./live-search";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const APIFY_IMAGE_SEARCH_ACTOR_ID = process.env.APIFY_IMAGE_SEARCH_ACTOR_ID;
-const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN in .env.local");
 if (!APIFY_IMAGE_SEARCH_ACTOR_ID)
   throw new Error("Missing APIFY_IMAGE_SEARCH_ACTOR_ID in .env.local");
-if (!IMGBB_API_KEY) throw new Error("Missing IMGBB_API_KEY in .env.local");
 
-const CNY_TO_BDT = 17.5;
-const IMAGE_RESULTS_PER_SEARCH = 2;
+const PRODUCTS_WANTED = 3;
+const ASK_FOR = 5;
+
+const IS_DEV00 = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("dev00");
+const IS_CRAWLEAST = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("crawleast");
+
+console.log(
+  `[image-search] actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (dev00=${IS_DEV00}, crawleast=${IS_CRAWLEAST})`
+);
 
 type RawListing = {
   offerId?: string;
-  similarityRank?: number;
+  productId?: string;
   title?: string;
+  price?: number;
   priceYuan?: number;
-  consignPriceYuan?: number;
-  moq?: number;
-  bookedCount?: number;
+  currency?: string;
   imageUrl?: string;
+  productUrl?: string;
   detailUrl?: string;
-  supplier?: {
-    name?: string;
-    city?: string;
-    province?: string;
-    yearsOnPlatform?: number;
-    compositeScore?: number;
-    isFactory?: boolean;
-    isSuperFactory?: boolean;
-  };
+  supplierName?: string;
+  supplier?: { name?: string };
+  [key: string]: unknown;
 };
 
 type RawImageSearchResult = {
-  type?: string;
-  status?: string;
-  matchCount?: number;
   results?: RawListing[];
   matches?: RawListing[];
   listings?: RawListing[];
@@ -49,38 +57,61 @@ type RawImageSearchResult = {
   [key: string]: unknown;
 };
 
-function markupMultiplier(bdtPrice: number): number {
-  if (bdtPrice < 500) return 1.25;
-  if (bdtPrice < 2500) return 1.20;
-  if (bdtPrice < 7500) return 1.15;
-  return 1.10;
-}
+// ---- catbox upload ----
 
 export async function rehostImage(base64: string): Promise<string> {
-  const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
+  const match = base64.match(/^data:image\/(\w+);base64,(.+)$/);
+  const mimeExt = match ? match[1] : "jpg";
+  const cleanBase64 = match
+    ? match[2]
+    : base64.replace(/^data:image\/\w+;base64,/, "");
 
-  const formData = new URLSearchParams();
-  formData.append("key", IMGBB_API_KEY!);
-  formData.append("image", cleanBase64);
+  const ext = mimeExt === "jpeg" ? "jpg" : mimeExt;
+  const filename = `cdb-${Date.now()}.${ext}`;
+  const buffer = Buffer.from(cleanBase64, "base64");
 
-  const response = await fetch("https://api.imgbb.com/1/upload", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: formData.toString(),
-  });
+  const MAX_ATTEMPTS = 3;
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`imgbb upload failed (${response.status}): ${text}`);
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
+
+    try {
+      const formData = new FormData();
+      formData.append("reqtype", "fileupload");
+      formData.append(
+        "fileToUpload",
+        new Blob([new Uint8Array(buffer)], { type: `image/${mimeExt}` }),
+        filename
+      );
+
+      const response = await fetch("https://catbox.moe/user/api.php", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        lastError = new Error(`catbox failed (${response.status})`);
+        continue;
+      }
+
+      const url = (await response.text()).trim();
+      if (!url.startsWith("https://")) {
+        lastError = new Error(`catbox invalid URL: ${url}`);
+        continue;
+      }
+      console.log(`[catbox] uploaded → ${url}`);
+      return url;
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue;
+    }
   }
 
-  const data = await response.json();
-  if (!data.success || !data.data?.url) {
-    throw new Error(`imgbb returned no URL: ${JSON.stringify(data)}`);
-  }
-
-  return data.data.url as string;
+  throw lastError ?? new Error("catbox upload failed");
 }
+
+// ---- Image search actor ----
 
 function extractListings(raw: RawImageSearchResult): RawListing[] {
   if (Array.isArray(raw.results)) return raw.results as RawListing[];
@@ -102,158 +133,248 @@ function extractListings(raw: RawImageSearchResult): RawListing[] {
   return [];
 }
 
-async function transformImageResult(raw: RawListing): Promise<LiveProduct | null> {
-  // Direct match to crawleast actor fields
-  if (!raw.imageUrl || !raw.imageUrl.startsWith("http")) return null;
-  if (!raw.priceYuan || raw.priceYuan <= 0) return null;
-  if (!raw.title) return null;
-
-  const englishTitle = await translateToEnglish(raw.title);
-  const priceBDT = raw.priceYuan * CNY_TO_BDT;
-  const multiplier = markupMultiplier(priceBDT);
-  const finalPrice = Math.round(priceBDT * multiplier);
-  const oldPrice = Math.round(finalPrice * 1.25);
-
-  const offerId = raw.offerId || Math.random().toString(36).slice(2, 10);
-  const moq = raw.moq ?? 1;
-  const reviews = raw.bookedCount ?? 0;
-  const supplierName = raw.supplier?.name ?? "Verified Supplier";
-  const province = raw.supplier?.province ?? "";
-  const city = raw.supplier?.city ?? "";
-  const verifiedYears = raw.supplier?.yearsOnPlatform ?? 5;
-  const rating = raw.supplier?.compositeScore ?? 4.5;
-  const detailUrl = raw.detailUrl ?? "";
-
-  let subtitle = "China";
-  if (province.trim()) {
-    const provinceEn = await translateToEnglish(province);
-    subtitle = `${provinceEn} · China`;
+async function findListingsByImage(imageUrl: string): Promise<RawListing[]> {
+  let input: Record<string, unknown>;
+  if (IS_DEV00) {
+    input = {
+      imageUrl,
+      maxResults: ASK_FOR,
+      destination: "1688",
+      currency: "cny",
+    };
+  } else {
+    input = {
+      imageUrl,
+      maxResults: ASK_FOR,
+    };
   }
 
-  return {
-    id: `img-${offerId}`,
-    title: englishTitle.slice(0, 80),
-    subtitle,
-    price: finalPrice,
-    oldPrice,
-    discount: 20,
-    rating,
-    reviews,
-    image: raw.imageUrl,
-    gallery: [raw.imageUrl],
-    colors: [{ id: "default", label: "Default", hex: "#000000" }],
-    inStock: true,
-    stockCount: 999,
-    features: [
-      { icon: "🏭", label: city || province || "China" },
-      { icon: "📦", label: `MOQ ${moq}` },
-      { icon: "⭐", label: `${verifiedYears} yrs` },
-    ],
-    description: englishTitle,
-    sourceUrl: detailUrl,
-    moq,
-    supplierName,
-    priceOriginalCny: raw.priceYuan,
-    isLive: true,
-  };
-}
+  const url = `https://api.apify.com/v2/acts/${APIFY_IMAGE_SEARCH_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180`;
+  const startedAt = Date.now();
+  console.log(`[image-search] input: ${JSON.stringify(input)}`);
 
-async function runActorAsync(
-  actorId: string,
-  input: Record<string, unknown>,
-  maxWaitMs: number = 120000
-): Promise<RawImageSearchResult[]> {
-  const startUrl = `https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_TOKEN}`;
-  const startRes = await fetch(startUrl, {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 
-  if (!startRes.ok) {
-    const text = await startRes.text();
-    throw new Error(`Apify start failed (${startRes.status}): ${text}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Image search actor failed (${response.status}): ${text}`);
   }
 
-  const run = (await startRes.json()).data;
-  const runId = run.id;
-  console.log(`Started Apify run: ${runId}`);
-
-  const startTime = Date.now();
-  while (Date.now() - startTime < maxWaitMs) {
-    await new Promise((r) => setTimeout(r, 1500));
-
-    const statusRes = await fetch(
-      `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`
-    );
-    if (!statusRes.ok) continue;
-
-    const statusData = (await statusRes.json()).data;
-    const status = statusData.status;
-    console.log(`Run ${runId} status: ${status}`);
-
-    if (status === "SUCCEEDED") {
-      const datasetId = statusData.defaultDatasetId;
-      const dataRes = await fetch(
-        `https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`
-      );
-      if (!dataRes.ok) throw new Error("Failed to fetch dataset");
-      return (await dataRes.json()) as RawImageSearchResult[];
-    }
-
-    if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-      throw new Error(`Apify run ended with status: ${status}`);
-    }
-  }
-
-  throw new Error("Apify run timed out");
-}
-
-export async function imageSearch1688(
-  imageUrl: string,
-  maxResults: number = IMAGE_RESULTS_PER_SEARCH
-): Promise<LiveProduct[]> {
-  const input = {
-    imageUrls: [imageUrl],
-    maxImages: 1,
-    maxResultsPerImage: IMAGE_RESULTS_PER_SEARCH,
-    enrichDetails: false,
-  };
-
-  let items: RawImageSearchResult[];
-
-  try {
-    const url = `https://api.apify.com/v2/acts/${APIFY_IMAGE_SEARCH_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=150`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
-
-    if (response.ok) {
-      items = (await response.json()) as RawImageSearchResult[];
-    } else {
-      console.log(`Sync endpoint failed with ${response.status}, falling back to async`);
-      items = await runActorAsync(APIFY_IMAGE_SEARCH_ACTOR_ID!, input);
-    }
-  } catch (err: any) {
-    console.log(`Sync attempt error: ${err.message}, using async`);
-    items = await runActorAsync(APIFY_IMAGE_SEARCH_ACTOR_ID!, input);
-  }
+  const items = (await response.json()) as RawImageSearchResult[];
+  const ms = Date.now() - startedAt;
 
   const allListings: RawListing[] = [];
   for (const item of items) {
     if (item.error) continue;
-    const listings = extractListings(item);
-    allListings.push(...listings);
+    allListings.push(...extractListings(item));
   }
 
-  console.log(`Extracted ${allListings.length} raw listings from actor`);
-
-  const transformed = await Promise.all(allListings.map(transformImageResult));
-  const final = (transformed.filter(Boolean) as LiveProduct[]).slice(0, maxResults);
-
-  console.log(`Returning ${final.length} transformed products`);
-
-  return final;
+  console.log(`[image-search] ${allListings.length} listings in ${ms}ms`);
+  return allListings;
 }
+
+// ---- Fallback ----
+
+function fallbackToLive(raw: RawListing): LiveProduct | null {
+  const id = String(raw.offerId ?? raw.productId ?? "");
+  if (!id || !raw.title || !raw.imageUrl) return null;
+
+  const priceCny =
+    typeof raw.price === "number"
+      ? raw.price
+      : typeof raw.priceYuan === "number"
+      ? raw.priceYuan
+      : 0;
+  if (priceCny <= 0) return null;
+
+  const priceBdt = Math.round(priceCny * 18.5);
+  const oldPrice = Math.round(priceBdt * 1.25);
+
+  return {
+    id: `live-${id}`,
+    title: String(raw.title).slice(0, 120),
+    subtitle: "China",
+    price: priceBdt,
+    priceMax: undefined,
+    oldPrice,
+    discount: 20,
+    rating: 4.5,
+    reviews: 0,
+    image: String(raw.imageUrl),
+    gallery: [String(raw.imageUrl)],
+    colors: [],
+    sizes: [],
+    specs: undefined,
+    videoUrl: undefined,
+    inStock: true,
+    stockCount: 999,
+    features: [{ icon: "📍", label: "China" }],
+    description: String(raw.title),
+    sourceUrl: String(raw.detailUrl ?? raw.productUrl ?? ""),
+    moq: 1,
+    supplierName: String(
+      raw.supplierName ?? raw.supplier?.name ?? "1688 Supplier"
+    ),
+    priceOriginalCny: priceCny,
+    isLive: true,
+  };
+}
+
+// ---- Convert PizaniProduct → LiveProduct ----
+
+function pizaniToLive(p: PizaniProduct): LiveProduct {
+  return {
+    id: `live-${p.id}`,
+    title: p.title,
+    subtitle: p.subtitle,
+    price: p.price,
+    priceMax: p.priceMax,
+    priceCnyMin: p.priceCnyMin,
+    priceCnyMax: p.priceCnyMax,
+    oldPrice: p.oldPrice,
+    discount: p.discount,
+    rating: p.rating,
+    reviews: p.reviews,
+    image: p.image,
+    gallery: p.gallery,
+    colors: p.colors,
+    sizes: p.sizes,
+    variants: p.variants,
+    specs: p.specs,
+    videoUrl: undefined,
+    inStock: p.inStock,
+    stockCount: p.stockCount,
+    features: p.features,
+    description: p.description,
+    sourceUrl: p.sourceUrl,
+    moq: p.moq,
+    supplierName: p.supplierName,
+    priceOriginalCny: p.priceOriginalCny,
+    isLive: true,
+    weightKg: p.weightKg,
+  };
+}
+
+// ---- Main pipeline ----
+
+export async function runImageSearchJob(
+  jobId: string,
+  imageBase64OrUrl: string
+): Promise<void> {
+  const t0 = Date.now();
+  try {
+    let hostedUrl = imageBase64OrUrl;
+    if (imageBase64OrUrl.startsWith("data:")) {
+      hostedUrl = await rehostImage(imageBase64OrUrl);
+    }
+    console.log(`[job ${jobId}] catbox done at +${Date.now() - t0}ms`);
+
+    updateJob(jobId, { status: "searching", imageUrl: hostedUrl });
+
+    const listings = await findListingsByImage(hostedUrl);
+    console.log(`[job ${jobId}] image search done at +${Date.now() - t0}ms`);
+
+    if (listings.length === 0) {
+      updateJob(jobId, {
+        status: "done",
+        error: "No matching products found.",
+      });
+      return;
+    }
+
+    const offerIds: string[] = [];
+    const seen = new Set<string>();
+    for (const l of listings) {
+      const id = String(l.offerId ?? l.productId ?? "");
+      if (!/^\d{8,15}$/.test(id)) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      offerIds.push(id);
+      if (offerIds.length >= PRODUCTS_WANTED) break;
+    }
+
+    console.log(
+      `[job ${jobId}] found ${offerIds.length} offerIds: ${offerIds.join(", ")}`
+    );
+
+    if (offerIds.length === 0) {
+      updateJob(jobId, {
+        status: "done",
+        error: "No matching products found.",
+      });
+      return;
+    }
+
+    updateJob(jobId, {
+      status: "loading",
+      offerIds,
+      totalExpected: offerIds.length,
+    });
+
+    console.log(`[job ${jobId}] fetching details via pizani (parallel)...`);
+
+    // Parallel — pizani has no rate limits, safe to fire all 3 at once.
+    const tasks = offerIds.map(async (offerId) => {
+      const tStart = Date.now();
+      try {
+        const detail = await fetchPizani1688(offerId);
+        if (detail) {
+          const live = pizaniToLive(detail);
+          pushProduct(jobId, live);
+          console.log(
+            `[job ${jobId}] ✓ pizani ${live.id} in ${Date.now() - tStart}ms`
+          );
+          return;
+        }
+        console.warn(`[job ${jobId}] ✗ pizani ${offerId} empty`);
+      } catch (err: any) {
+        console.warn(
+          `[job ${jobId}] ✗ pizani ${offerId} failed: ${err.message}`
+        );
+      }
+
+      // Fallback
+      const raw = listings.find(
+        (l) => String(l.offerId ?? l.productId) === offerId
+      );
+      if (raw) {
+        const fallback = fallbackToLive(raw);
+        if (fallback) {
+          pushProduct(jobId, fallback);
+          console.log(`[job ${jobId}] ✓ fallback ${fallback.id}`);
+        }
+      }
+    });
+
+    await Promise.all(tasks);
+
+    updateJob(jobId, { status: "done" });
+    console.log(`[job ${jobId}] DONE total=${Date.now() - t0}ms`);
+  } catch (err: any) {
+    console.error(`[job ${jobId}] pipeline failed:`, err);
+    updateJob(jobId, {
+      status: "error",
+      error: err?.message || "Search failed",
+    });
+  }
+}
+
+// ---- legacy compat ----
+
+export async function imageSearch1688(
+  imageUrl: string,
+  _maxResults: number = PRODUCTS_WANTED
+): Promise<LiveProduct[]> {
+  const job = createJob();
+  await runImageSearchJob(job.id, imageUrl);
+  const { getJob } = await import("./imageSearchJobs");
+  const final = getJob(job.id);
+  return (final?.products as LiveProduct[]) ?? [];
+}
+
+export { createJob };
+export type { ImageSearchJob };

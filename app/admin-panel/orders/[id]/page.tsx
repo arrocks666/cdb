@@ -13,12 +13,18 @@ import { db } from "@/lib/firebase";
 import {
   Order,
   OrderStatus,
+  OrderPayment,
+  OrderCharges,
   STATUS_ORDER,
   STATUS_LABELS,
 } from "@/lib/OrderContext";
 import { formatBDT, formatDateTime } from "@/lib/adminOrders";
 import { generateInvoice } from "@/lib/generateInvoice";
-import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
 export default function AdminOrderDetailPage({
   params,
@@ -36,14 +42,23 @@ export default function AdminOrderDetailPage({
   const [status, setStatus] = useState<OrderStatus>("placed");
   const [chinaOrderId, setChinaOrderId] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
-  const [paidAmount, setPaidAmount] = useState<number>(0);
-  const [transactionId, setTransactionId] = useState("");
-  const [editingPayment, setEditingPayment] = useState(false);
+
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [addingPayment, setAddingPayment] = useState(false);
+
+  const [chinaLocalCourier, setChinaLocalCourier] = useState<string>("");
+  const [bdCourier, setBdCourier] = useState<string>("");
+  const [shippingWeightKg, setShippingWeightKg] = useState<string>("");
+  const [shippingRatePerKg, setShippingRatePerKg] = useState<string>("");
+  const [showChinaLocalCourier, setShowChinaLocalCourier] = useState(false);
+  const [showBdCourier, setShowBdCourier] = useState(false);
+  const [showShippingCharge, setShowShippingCharge] = useState(false);
+  const [savingCharges, setSavingCharges] = useState(false);
 
   const [savingStatus, setSavingStatus] = useState(false);
   const [savingChina, setSavingChina] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
-  const [savingPayment, setSavingPayment] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
@@ -67,8 +82,21 @@ export default function AdminOrderDetailPage({
         setStatus(data.status);
         setChinaOrderId(data.chinaOrderId ?? "");
         setAdminNotes(data.adminNotes ?? "");
-        setPaidAmount(data.paidAmount ?? data.total ?? 0);
-        setTransactionId(data.transactionId ?? "");
+
+        const c = data.charges ?? {};
+        setChinaLocalCourier(
+          c.chinaLocalCourier != null ? String(c.chinaLocalCourier) : ""
+        );
+        setBdCourier(c.bdCourier != null ? String(c.bdCourier) : "");
+        setShippingWeightKg(
+          c.shippingWeightKg != null ? String(c.shippingWeightKg) : ""
+        );
+        setShippingRatePerKg(
+          c.shippingRatePerKg != null ? String(c.shippingRatePerKg) : ""
+        );
+        setShowChinaLocalCourier(!!c.showChinaLocalCourier);
+        setShowBdCourier(!!c.showBdCourier);
+        setShowShippingCharge(!!c.showShippingCharge);
       })
       .catch((err) => {
         console.error("Error loading order:", err);
@@ -139,52 +167,146 @@ export default function AdminOrderDetailPage({
     }
   };
 
-  const handleSavePayment = async () => {
-    setSavingPayment(true);
+  const handleAddPayment = async () => {
+    if (!order) return;
+    const amount = Number(paymentAmount);
+    if (!amount || amount <= 0) {
+      showToast("Enter a valid amount");
+      return;
+    }
+
+    setAddingPayment(true);
     try {
-      const dueAmount = Math.max(0, (order?.total ?? 0) - paidAmount);
+      const noteTrimmed = paymentNote.trim();
+      const newPayment: OrderPayment = {
+        id: `p_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        amount,
+        date: Date.now(),
+        addedBy: "admin",
+        ...(noteTrimmed ? { note: noteTrimmed } : {}),
+      };
+
+      const existing = order.payments ?? [];
+      const payments = [...existing, newPayment];
+      const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+      const dueAmount = Math.max(0, order.total - paidAmount);
+
       await updateDoc(doc(db, "orders", id), {
+        payments,
         paidAmount,
         dueAmount,
-        transactionId: transactionId.trim(),
         updatedAt: serverTimestamp(),
       });
-      if (order) {
-        setOrder({
-          ...order,
-          paidAmount,
-          dueAmount,
-          transactionId: transactionId.trim(),
-        });
-      }
-      showToast("Payment info saved");
-      setEditingPayment(false);
+
+      setOrder({ ...order, payments, paidAmount, dueAmount });
+      setPaymentAmount("");
+      setPaymentNote("");
+      showToast("Payment added");
     } catch (err) {
       console.error(err);
-      showToast("Failed to save payment");
+      showToast("Failed to add payment");
     } finally {
-      setSavingPayment(false);
+      setAddingPayment(false);
+    }
+  };
+
+  const handleRemovePayment = async (paymentId: string) => {
+    if (!order) return;
+    if (!confirm("Remove this payment?")) return;
+
+    try {
+      const existing = order.payments ?? [];
+      const payments = existing.filter((p) => p.id !== paymentId);
+      const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+      const dueAmount = Math.max(0, order.total - paidAmount);
+
+      await updateDoc(doc(db, "orders", id), {
+        payments,
+        paidAmount,
+        dueAmount,
+        updatedAt: serverTimestamp(),
+      });
+
+      setOrder({ ...order, payments, paidAmount, dueAmount });
+      showToast("Payment removed");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to remove payment");
     }
   };
 
   const handleMarkPaid = async () => {
     if (!order) return;
-    const newPaid = order.total;
-    setPaidAmount(newPaid);
-    setSavingPayment(true);
+    const remainingDue = Math.max(0, order.total - (order.paidAmount ?? 0));
+    if (remainingDue <= 0) return;
+
     try {
+      const newPayment: OrderPayment = {
+        id: `p_${Date.now()}_fully`,
+        amount: remainingDue,
+        date: Date.now(),
+        note: "Marked fully paid",
+        addedBy: "admin",
+      };
+
+      const existing = order.payments ?? [];
+      const payments = [...existing, newPayment];
+      const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+      const dueAmount = Math.max(0, order.total - paidAmount);
+
       await updateDoc(doc(db, "orders", id), {
-        paidAmount: newPaid,
-        dueAmount: 0,
+        payments,
+        paidAmount,
+        dueAmount,
         updatedAt: serverTimestamp(),
       });
-      setOrder({ ...order, paidAmount: newPaid, dueAmount: 0 });
+
+      setOrder({ ...order, payments, paidAmount, dueAmount });
       showToast("Marked as fully paid");
     } catch (err) {
       console.error(err);
       showToast("Failed to update");
+    }
+  };
+
+  const computedShippingCharge =
+    (Number(shippingWeightKg) || 0) * (Number(shippingRatePerKg) || 0);
+
+  const handleSaveCharges = async () => {
+    if (!order) return;
+    setSavingCharges(true);
+
+    try {
+      const clc = Number(chinaLocalCourier);
+      const bd = Number(bdCourier);
+      const wkg = Number(shippingWeightKg);
+      const rkg = Number(shippingRatePerKg);
+
+      const newCharges: OrderCharges = {
+        showChinaLocalCourier,
+        showBdCourier,
+        showShippingCharge,
+        ...(clc > 0 ? { chinaLocalCourier: clc } : {}),
+        ...(bd > 0 ? { bdCourier: bd } : {}),
+        ...(wkg > 0 ? { shippingWeightKg: wkg } : {}),
+        ...(rkg > 0 ? { shippingRatePerKg: rkg } : {}),
+        ...(computedShippingCharge > 0
+          ? { shippingCharge: computedShippingCharge }
+          : {}),
+      };
+
+      await updateDoc(doc(db, "orders", id), {
+        charges: newCharges,
+        updatedAt: serverTimestamp(),
+      });
+
+      setOrder({ ...order, charges: newCharges });
+      showToast("Charges saved");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to save charges");
     } finally {
-      setSavingPayment(false);
+      setSavingCharges(false);
     }
   };
 
@@ -234,9 +356,13 @@ export default function AdminOrderDetailPage({
 
   const isManual = order.userId === "admin-manual";
   const currentStatusIdx = STATUS_ORDER.indexOf(status);
-  const orderPaid = order.paidAmount ?? order.total;
+  const orderPaid = order.paidAmount ?? 0;
   const orderDue = Math.max(0, order.total - orderPaid);
   const isFullyPaid = orderDue === 0;
+  const payments = order.payments ?? [];
+
+  const arrivedIdx = STATUS_ORDER.indexOf("arrived");
+  const showChargesSection = currentStatusIdx >= arrivedIdx;
 
   return (
     <div>
@@ -251,16 +377,7 @@ export default function AdminOrderDetailPage({
           onClick={() => router.push("/admin-panel/orders")}
           className="mb-3 flex items-center gap-1 text-xs font-medium text-text-muted transition hover:text-gold-primary"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
           Back to Orders
@@ -293,16 +410,7 @@ export default function AdminOrderDetailPage({
             disabled={downloading}
             className="flex items-center gap-2 rounded-lg border-2 border-gold-primary bg-white px-4 py-2 text-sm font-semibold text-gold-primary transition hover:bg-bg-orange disabled:opacity-40"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -338,112 +446,287 @@ export default function AdminOrderDetailPage({
         </div>
       </div>
 
+      {/* PAYMENT */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
             Payment
           </h2>
-          <div className="flex items-center gap-2">
-            {!isFullyPaid && (
-              <button
-                onClick={handleMarkPaid}
-                disabled={savingPayment}
-                className="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-              >
-                Mark as Fully Paid
-              </button>
-            )}
+          {!isFullyPaid && (
             <button
-              onClick={() => setEditingPayment(!editingPayment)}
-              className="text-xs font-semibold text-gold-primary underline"
+              onClick={handleMarkPaid}
+              className="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
             >
-              {editingPayment ? "Cancel" : "Edit"}
+              Mark as Fully Paid
             </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              Order Total
+            </p>
+            <p className="mt-1 text-xl font-bold text-text-primary">
+              {formatBDT(order.total)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              Paid
+            </p>
+            <p className="mt-1 text-xl font-bold text-success">
+              {formatBDT(orderPaid)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+              Due
+            </p>
+            <p
+              className={`mt-1 text-xl font-bold ${
+                isFullyPaid ? "text-success" : "text-red-primary"
+              }`}
+            >
+              {formatBDT(orderDue)}
+            </p>
           </div>
         </div>
 
-        {editingPayment ? (
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                Transaction ID
-              </label>
-              <input
-                type="text"
-                value={transactionId}
-                onChange={(e) => setTransactionId(e.target.value)}
-                placeholder="e.g., 8N7A5D2F1C"
-                className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
-              />
-            </div>
+        <div className="mt-5 border-t border-border-subtle pt-4">
+          <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-text-muted">
+            Payment History
+          </h3>
 
-            <div>
-              <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                Amount Paid (৳)
+          {payments.length === 0 ? (
+            <p className="text-xs text-text-muted md:text-sm">
+              No payments recorded yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {payments.map((p, idx) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-success/15 text-[11px] font-bold text-success">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-text-primary">
+                        {formatBDT(p.amount)}
+                      </p>
+                      <p className="text-[11px] text-text-muted">
+                        {new Date(p.date).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {p.note ? ` · ${p.note}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRemovePayment(p.id)}
+                    className="text-[11px] font-semibold text-red-primary underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 border-t border-border-subtle pt-4">
+          <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-text-muted">
+            Add Payment
+          </h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="md:col-span-1">
+              <label className="mb-1 block text-[11px] font-medium text-text-secondary">
+                Amount (৳)
               </label>
               <input
                 type="number"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="0"
                 className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
               />
-              <p className="mt-1 text-[11px] text-text-muted">
-                Order total: {formatBDT(order.total)} · Due:{" "}
-                {formatBDT(Math.max(0, order.total - paidAmount))}
+            </div>
+            <div className="md:col-span-1">
+              <label className="mb-1 block text-[11px] font-medium text-text-secondary">
+                Note (optional)
+              </label>
+              <input
+                type="text"
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+                placeholder="e.g. cash / bKash"
+                className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+              />
+            </div>
+            <div className="md:col-span-1 flex items-end">
+              <button
+                onClick={handleAddPayment}
+                disabled={addingPayment || !paymentAmount}
+                className="w-full rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+              >
+                {addingPayment ? "Adding..." : "+ Add Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {showChargesSection && (
+        <section className="mt-5 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-5 shadow-card-dark">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
+                Shipping Charges
+              </h2>
+              <p className="mt-0.5 text-xs text-text-muted">
+                Enter charges after the parcel arrives. Toggle "Show" to display each to the customer.
               </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border-subtle bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                  China Local Courier (৳)
+                </label>
+                <label className="flex items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={showChinaLocalCourier}
+                    onChange={(e) => setShowChinaLocalCourier(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-text-secondary">Show to user</span>
+                </label>
+              </div>
+              <input
+                type="number"
+                value={chinaLocalCourier}
+                onChange={(e) => setChinaLocalCourier(e.target.value)}
+                placeholder="0"
+                className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+              />
             </div>
 
+            <div className="rounded-lg border border-border-subtle bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                  BD Courier Charge (৳)
+                </label>
+                <label className="flex items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={showBdCourier}
+                    onChange={(e) => setShowBdCourier(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-text-secondary">Show to user</span>
+                </label>
+              </div>
+              <input
+                type="number"
+                value={bdCourier}
+                onChange={(e) => setBdCourier(e.target.value)}
+                placeholder="0"
+                className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+              />
+            </div>
+
+            <div className="rounded-lg border border-border-subtle bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                  Shipping Charge
+                </label>
+                <label className="flex items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={showShippingCharge}
+                    onChange={(e) => setShowShippingCharge(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-text-secondary">Show to user</span>
+                </label>
+              </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Weight (kg)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={shippingWeightKg}
+                    onChange={(e) => setShippingWeightKg(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Rate (৳/kg)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={shippingRatePerKg}
+                    onChange={(e) => setShippingRatePerKg(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-2 flex items-center justify-between rounded bg-bg-orange px-3 py-2">
+                <span className="text-[11px] font-medium text-text-secondary">
+                  Calculated shipping charge:
+                </span>
+                <span className="text-sm font-bold text-red-primary">
+                  {formatBDT(computedShippingCharge)}
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border-2 border-gold-primary/40 bg-white p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                  Total Extra Charges
+                </span>
+                <span className="text-lg font-bold text-red-primary">
+                  {formatBDT(
+                    (Number(chinaLocalCourier) || 0) +
+                      (Number(bdCourier) || 0) +
+                      computedShippingCharge
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
             <button
-              onClick={handleSavePayment}
-              disabled={savingPayment}
-              className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow disabled:opacity-40"
+              onClick={handleSaveCharges}
+              disabled={savingCharges}
+              className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
             >
-              {savingPayment ? "Saving..." : "Save Payment Info"}
+              {savingCharges ? "Saving..." : "Save Charges"}
             </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Order Total
-              </p>
-              <p className="mt-1 text-xl font-bold text-text-primary">
-                {formatBDT(order.total)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Paid
-              </p>
-              <p className="mt-1 text-xl font-bold text-success">
-                {formatBDT(orderPaid)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Due
-              </p>
-              <p
-                className={`mt-1 text-xl font-bold ${
-                  isFullyPaid ? "text-success" : "text-red-primary"
-                }`}
-              >
-                {formatBDT(orderDue)}
-              </p>
-            </div>
-            {order.transactionId && (
-              <div className="md:col-span-3 border-t border-border-subtle pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Transaction ID
-                </p>
-                <p className="mt-1 font-mono text-sm font-bold text-text-primary">
-                  {order.transactionId}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
+        </section>
+      )}
 
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
@@ -459,30 +742,18 @@ export default function AdminOrderDetailPage({
             const isDone = i < currentStatusIdx;
             const isCurrent = i === currentStatusIdx;
             return (
-              <div
-                key={s}
-                className="flex items-center gap-2 text-xs md:text-sm"
-              >
+              <div key={s} className="flex items-center gap-2 text-xs md:text-sm">
                 <span
                   className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
                     isDone
                       ? "border-success bg-success text-white"
                       : isCurrent
-                        ? "border-gold-primary bg-gold-primary text-white"
-                        : "border-border-subtle bg-white"
+                      ? "border-gold-primary bg-gold-primary text-white"
+                      : "border-border-subtle bg-white"
                   }`}
                 >
                   {isDone && (
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
@@ -492,8 +763,8 @@ export default function AdminOrderDetailPage({
                     isDone
                       ? "text-success"
                       : isCurrent
-                        ? "font-semibold text-gold-primary"
-                        : "text-text-muted"
+                      ? "font-semibold text-gold-primary"
+                      : "text-text-muted"
                   }
                 >
                   {STATUS_LABELS[s]}
@@ -542,9 +813,7 @@ export default function AdminOrderDetailPage({
           />
           <button
             onClick={handleSaveChina}
-            disabled={
-              savingChina || chinaOrderId.trim() === (order.chinaOrderId ?? "")
-            }
+            disabled={savingChina || chinaOrderId.trim() === (order.chinaOrderId ?? "")}
             className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
           >
             {savingChina ? "Saving..." : "Save"}
@@ -569,9 +838,7 @@ export default function AdminOrderDetailPage({
         <div className="mt-3 flex justify-end">
           <button
             onClick={handleSaveNotes}
-            disabled={
-              savingNotes || adminNotes.trim() === (order.adminNotes ?? "")
-            }
+            disabled={savingNotes || adminNotes.trim() === (order.adminNotes ?? "")}
             className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
           >
             {savingNotes ? "Saving..." : "Save Notes"}
@@ -586,16 +853,9 @@ export default function AdminOrderDetailPage({
         <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
           <InfoRow label="Name" value={order.address?.name} />
           <InfoRow label="Phone" value={order.address?.phone} />
-          <InfoRow
-            label="Address"
-            value={order.address?.address}
-            className="md:col-span-2"
-          />
-          <InfoRow
-            label="Payment"
-            value={order.paymentMethod}
-            className="md:col-span-2"
-          />
+          <InfoRow label="Address" value={order.address?.address} className="md:col-span-2" />
+          <InfoRow label="District" value={order.address?.district} />
+          <InfoRow label="Payment" value={order.paymentMethod} />
         </div>
       </section>
 
@@ -630,6 +890,8 @@ export default function AdminOrderDetailPage({
                   </p>
                   <p className="mt-0.5 text-xs text-text-muted">
                     {formatBDT(item.price)} × {item.quantity}
+                    {item.colorLabel ? ` · ${item.colorLabel}` : ""}
+                    {item.size ? ` · ${item.size}` : ""}
                   </p>
                 </div>
                 <span className="text-sm font-bold text-red-primary">
@@ -643,15 +905,11 @@ export default function AdminOrderDetailPage({
         <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-4 text-sm">
           <div className="flex justify-between text-text-secondary">
             <span>Subtotal</span>
-            <span className="text-text-primary">
-              {formatBDT(order.subtotal)}
-            </span>
+            <span className="text-text-primary">{formatBDT(order.subtotal)}</span>
           </div>
           <div className="flex justify-between text-text-secondary">
             <span>Shipping</span>
-            <span className="text-text-primary">
-              {formatBDT(order.shipping)}
-            </span>
+            <span className="text-text-primary">{formatBDT(order.shipping)}</span>
           </div>
           <div className="flex justify-between border-t border-border-subtle pt-2">
             <span className="font-semibold text-text-primary">Total</span>

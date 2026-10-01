@@ -13,9 +13,7 @@ import {
   query,
   where,
   orderBy,
-  limit,
   serverTimestamp,
-  Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -31,27 +29,48 @@ export type OrderStatus =
 export type OrderItem = {
   productId: string;
   colorId: string;
+  colorLabel?: string;
+  size?: string;
   quantity: number;
-  price: number;        // selling price per unit in BDT (what customer paid)
-  costPrice?: number;   // admin-only: cost price per unit in BDT
-  title?: string;       // snapshot for order history display
-  image?: string;       // snapshot
-  isLive?: boolean;     // was this a live-search product?
+  price: number;
+  costPrice?: number;
+  title?: string;
+  image?: string;
+  isLive?: boolean;
+};
+
+export type OrderPayment = {
+  id: string;
+  amount: number;
+  date: number;
+  note?: string;
+  addedBy?: string;
+};
+
+export type OrderCharges = {
+  chinaLocalCourier?: number;
+  shippingCharge?: number;
+  bdCourier?: number;
+  shippingWeightKg?: number;
+  shippingRatePerKg?: number;
+  showChinaLocalCourier?: boolean;
+  showShippingCharge?: boolean;
+  showBdCourier?: boolean;
 };
 
 export type Order = {
   id: string;
-  userId: string;                 // Firebase Auth uid of customer
-  userPhone?: string;             // snapshot for admin display
-  createdAt: number;              // epoch ms (kept for fast sorting)
-  createdAtServer?: unknown;      // server timestamp (Firestore)
+  userId: string;
+  userPhone: string | null;
+  createdAt: number;
+  createdAtServer?: unknown;
   updatedAt?: unknown;
   items: OrderItem[];
   subtotal: number;
   shipping: number;
   total: number;
-  costTotal?: number;             // admin-only: sum of costPrice × qty
-  profit?: number;                // admin-only: total - costTotal - shipping
+  costTotal?: number;
+  profit?: number;
   paymentMethod: string;
   status: OrderStatus;
   address: {
@@ -60,18 +79,19 @@ export type Order = {
     address: string;
     district: string;
   };
-  // Admin-only fields
-  chinaOrderId?: string;          // 1688 order ID for tracking
-  adminNotes?: string;            // internal notes
+  transactionId?: string;
+  paidAmount?: number;
+  dueAmount?: number;
+  paymentScreenshots?: string[];
+  payments?: OrderPayment[];
+  chinaOrderId?: string;
+  adminNotes?: string;
   statusUpdatedAt?: unknown;
+  charges?: OrderCharges;
 };
 
 const COLLECTION = "orders";
 
-/**
- * Create a new order in Firestore. Called from checkout.
- * Returns the generated order ID.
- */
 export async function createOrder(
   draft: Omit<Order, "id" | "createdAt" | "createdAtServer" | "status">
 ): Promise<string> {
@@ -91,9 +111,6 @@ export async function createOrder(
   return orderId;
 }
 
-/**
- * Fetch a single order by ID.
- */
 export async function getOrder(id: string): Promise<Order | null> {
   try {
     const ref = doc(db, COLLECTION, id);
@@ -106,10 +123,6 @@ export async function getOrder(id: string): Promise<Order | null> {
   }
 }
 
-/**
- * Fetch all orders for a specific user, newest first.
- * Customer-facing — shows full history.
- */
 export async function getUserOrders(userId: string): Promise<Order[]> {
   try {
     const q = query(
@@ -118,17 +131,16 @@ export async function getUserOrders(userId: string): Promise<Order[]> {
       orderBy("createdAt", "desc")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Order, "id">) }));
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
   } catch (err) {
     console.error("Error fetching user orders:", err);
     return [];
   }
 }
 
-/**
- * Fetch all orders (admin) — optional date range.
- * If no `since` given, returns last 30 days.
- */
 export async function getAllOrders(since?: number): Promise<Order[]> {
   try {
     const cutoff = since ?? Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -138,16 +150,16 @@ export async function getAllOrders(since?: number): Promise<Order[]> {
       orderBy("createdAt", "desc")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Order, "id">) }));
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
   } catch (err) {
     console.error("Error fetching all orders:", err);
     return [];
   }
 }
 
-/**
- * Fetch orders within a date range (admin analytics).
- */
 export async function getOrdersBetween(
   fromMs: number,
   toMs: number
@@ -160,16 +172,16 @@ export async function getOrdersBetween(
       orderBy("createdAt", "desc")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Order, "id">) }));
+    return snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Order, "id">),
+    }));
   } catch (err) {
     console.error("Error fetching orders between dates:", err);
     return [];
   }
 }
 
-/**
- * Update order status (admin). Also stamps statusUpdatedAt.
- */
 export async function updateOrderStatus(
   id: string,
   status: OrderStatus
@@ -182,9 +194,6 @@ export async function updateOrderStatus(
   });
 }
 
-/**
- * Update arbitrary admin fields (chinaOrderId, adminNotes, etc).
- */
 export async function updateOrderFields(
   id: string,
   fields: Partial<Order>
@@ -196,10 +205,6 @@ export async function updateOrderFields(
   });
 }
 
-/**
- * Fill in cost price for order items (admin) and compute profit.
- * `itemCosts` is a map: itemIndex → costPrice per unit.
- */
 export async function setOrderCosts(
   id: string,
   order: Order,
@@ -225,9 +230,6 @@ export async function setOrderCosts(
   });
 }
 
-/**
- * Aggregate revenue + profit for a set of orders.
- */
 export function aggregateOrders(orders: Order[]): {
   count: number;
   revenue: number;
@@ -247,9 +249,70 @@ export function aggregateOrders(orders: Order[]): {
   return { count: orders.length, revenue, cost, profit };
 }
 
-/**
- * Status helpers (mirrors the customer-side OrderContext so pages stay compatible).
- */
+export async function addOrderPayment(
+  orderId: string,
+  order: Order,
+  amount: number,
+  note?: string
+): Promise<{ paidAmount: number; dueAmount: number; payments: OrderPayment[] }> {
+  const newPayment: OrderPayment = {
+    id: `p_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    amount,
+    date: Date.now(),
+    note: note?.trim() || undefined,
+    addedBy: "admin",
+  };
+
+  const existing = order.payments ?? [];
+  const payments = [...existing, newPayment];
+
+  const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+  const dueAmount = Math.max(0, order.total - paidAmount);
+
+  const ref = doc(db, COLLECTION, orderId);
+  await updateDoc(ref, {
+    payments,
+    paidAmount,
+    dueAmount,
+    updatedAt: serverTimestamp(),
+  });
+
+  return { paidAmount, dueAmount, payments };
+}
+
+export async function removeOrderPayment(
+  orderId: string,
+  order: Order,
+  paymentId: string
+): Promise<{ paidAmount: number; dueAmount: number; payments: OrderPayment[] }> {
+  const existing = order.payments ?? [];
+  const payments = existing.filter((p) => p.id !== paymentId);
+
+  const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+  const dueAmount = Math.max(0, order.total - paidAmount);
+
+  const ref = doc(db, COLLECTION, orderId);
+  await updateDoc(ref, {
+    payments,
+    paidAmount,
+    dueAmount,
+    updatedAt: serverTimestamp(),
+  });
+
+  return { paidAmount, dueAmount, payments };
+}
+
+export async function saveOrderCharges(
+  orderId: string,
+  charges: OrderCharges
+): Promise<void> {
+  const ref = doc(db, COLLECTION, orderId);
+  await updateDoc(ref, {
+    charges,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export const STATUS_ORDER: OrderStatus[] = [
   "placed",
   "confirmed",
@@ -270,15 +333,12 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   delivered: "Delivered",
 };
 
-/**
- * Helper — start of day / week / month in ms.
- */
 export function startOfDay(d = new Date()): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
 export function startOfWeek(d = new Date()): number {
-  const day = d.getDay(); // 0 = Sunday
+  const day = d.getDay();
   const diff = d.getDate() - day;
   return new Date(d.getFullYear(), d.getMonth(), diff).getTime();
 }

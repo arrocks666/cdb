@@ -11,14 +11,16 @@ import {
 export type CartItem = {
   productId: string;
   colorId: string;
+  colorLabel?: string;
+  size?: string;
   quantity: number;
-  // Snapshot data for live products (not in products.json)
   isLive?: boolean;
   liveSnapshot?: {
     id: string;
     title: string;
     subtitle?: string;
     price: number;
+    priceMax?: number;
     oldPrice: number;
     discount: number;
     image: string;
@@ -29,18 +31,27 @@ export type CartItem = {
     moq?: number;
     supplierName?: string;
     priceOriginalCny?: number;
+    colors?: { id: string; label: string; hex: string; image?: string }[];
+    sizes?: string[];
   };
 };
 
 type CartContextType = {
   items: CartItem[];
-  add: (productId: string, colorId: string, quantity?: number) => void;
+  add: (
+    productId: string,
+    colorId: string,
+    size: string | undefined,
+    quantity?: number,
+    colorLabel?: string
+  ) => void;
   addLive: (
     product: {
       id: string;
       title: string;
       subtitle?: string;
       price: number;
+      priceMax?: number;
       oldPrice: number;
       discount: number;
       image: string;
@@ -51,18 +62,40 @@ type CartContextType = {
       moq?: number;
       supplierName?: string;
       priceOriginalCny?: number;
+      colors?: { id: string; label: string; hex: string; image?: string }[];
+      sizes?: string[];
     },
     colorId: string,
-    quantity?: number
+    size: string | undefined,
+    quantity?: number,
+    colorLabel?: string
   ) => void;
-  remove: (productId: string, colorId: string) => void;
-  updateQty: (productId: string, colorId: string, quantity: number) => void;
+  remove: (productId: string, colorId: string, size: string | undefined) => void;
+  updateQty: (
+    productId: string,
+    colorId: string,
+    size: string | undefined,
+    quantity: number
+  ) => void;
   clear: () => void;
   totalCount: number;
 };
 
 const CartContext = createContext<CartContextType | null>(null);
 const STORAGE_KEY = "cdb_cart";
+
+function sameLine(
+  x: CartItem,
+  productId: string,
+  colorId: string,
+  size: string | undefined
+): boolean {
+  return (
+    x.productId === productId &&
+    x.colorId === colorId &&
+    (x.size ?? "") === (size ?? "")
+  );
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -83,19 +116,26 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [items, hydrated]);
 
-  const add = (productId: string, colorId: string, quantity = 1) => {
+  const add = (
+    productId: string,
+    colorId: string,
+    size: string | undefined,
+    quantity = 1,
+    colorLabel?: string
+  ) => {
     setItems((prev) => {
-      const existing = prev.find(
-        (x) => x.productId === productId && x.colorId === colorId
-      );
+      const existing = prev.find((x) => sameLine(x, productId, colorId, size));
       if (existing) {
         return prev.map((x) =>
-          x.productId === productId && x.colorId === colorId
+          sameLine(x, productId, colorId, size)
             ? { ...x, quantity: x.quantity + quantity }
             : x
         );
       }
-      return [...prev, { productId, colorId, quantity }];
+      return [
+        ...prev,
+        { productId, colorId, colorLabel, size, quantity },
+      ];
     });
   };
 
@@ -105,6 +145,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       title: string;
       subtitle?: string;
       price: number;
+      priceMax?: number;
       oldPrice: number;
       discount: number;
       image: string;
@@ -115,21 +156,27 @@ export function CartProvider({ children }: { children: ReactNode }) {
       moq?: number;
       supplierName?: string;
       priceOriginalCny?: number;
+      colors?: { id: string; label: string; hex: string; image?: string }[];
+      sizes?: string[];
     },
     colorId: string,
-    quantity = 1
+    size: string | undefined,
+    quantity = 1,
+    colorLabel?: string
   ) => {
     setItems((prev) => {
       const existing = prev.find(
         (x) =>
           x.productId === product.id &&
           x.colorId === colorId &&
+          (x.size ?? "") === (size ?? "") &&
           x.isLive === true
       );
       if (existing) {
         return prev.map((x) =>
           x.productId === product.id &&
           x.colorId === colorId &&
+          (x.size ?? "") === (size ?? "") &&
           x.isLive === true
             ? { ...x, quantity: x.quantity + quantity }
             : x
@@ -140,6 +187,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         {
           productId: product.id,
           colorId,
+          colorLabel,
+          size,
           quantity,
           isLive: true,
           liveSnapshot: {
@@ -147,6 +196,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             title: product.title,
             subtitle: product.subtitle,
             price: product.price,
+            priceMax: product.priceMax,
             oldPrice: product.oldPrice,
             discount: product.discount,
             image: product.image,
@@ -157,27 +207,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
             moq: product.moq,
             supplierName: product.supplierName,
             priceOriginalCny: product.priceOriginalCny,
+            colors: product.colors,
+            sizes: product.sizes,
           },
         },
       ];
     });
   };
 
-  const remove = (productId: string, colorId: string) => {
-    setItems((prev) =>
-      prev.filter(
-        (x) => !(x.productId === productId && x.colorId === colorId)
-      )
-    );
+  const remove = (
+    productId: string,
+    colorId: string,
+    size: string | undefined
+  ) => {
+    setItems((prev) => prev.filter((x) => !sameLine(x, productId, colorId, size)));
   };
 
-  const updateQty = (productId: string, colorId: string, quantity: number) => {
+  const updateQty = (
+    productId: string,
+    colorId: string,
+    size: string | undefined,
+    quantity: number
+  ) => {
     if (quantity < 1) return;
     setItems((prev) =>
       prev.map((x) =>
-        x.productId === productId && x.colorId === colorId
-          ? { ...x, quantity }
-          : x
+        sameLine(x, productId, colorId, size) ? { ...x, quantity } : x
       )
     );
   };
