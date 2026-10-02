@@ -25,10 +25,8 @@ export default function FlashSaleStrip() {
 
   const pad = (n: number) => n.toString().padStart(2, "0");
 
-  // ONLY admin-flagged products
   const flashProducts = products.filter((p) => p.isFlashSale === true).slice(0, 4);
 
-  // Hide section if nothing flagged
   if (flashProducts.length === 0) return null;
 
   return (
@@ -50,7 +48,7 @@ export default function FlashSaleStrip() {
               <span className="text-xs font-bold text-white md:text-base">:</span>
               <TimePill value={pad(time.s)} />
             </div>
-            <Link href="/search" className="flex items-center gap-0.5 text-[10px] font-semibold text-white transition hover:text-white/80 md:text-xs">
+            <Link href="/flash-sale" className="flex items-center gap-0.5 text-[10px] font-semibold text-white transition hover:text-white/80 md:text-xs">
               See All →
             </Link>
           </div>
