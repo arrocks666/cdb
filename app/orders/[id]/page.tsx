@@ -20,7 +20,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const orders = useOrders();
   const { products } = useProducts();
 
-  // Try local cache first, then fall back to Firestore fetch
   const cachedOrder = orders.getOrder(id);
   const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -66,6 +65,30 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const currentIndex = STATUS_ORDER.indexOf(order.status);
   const createdDate = new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+  // ✅ Customer-facing charge rows — always visible, values respect admin toggles
+  const charges = order.charges ?? {};
+
+  const chargeRows = [
+    {
+      key: "chinaLocalCourier",
+      label: "China Local Courier",
+      show: charges.showChinaLocalCourier === true,
+      value: charges.chinaLocalCourier ?? null,
+    },
+    {
+      key: "shippingCharge",
+      label: "Shipping Charge (China → Bangladesh)",
+      show: charges.showShippingCharge === true,
+      value: charges.shippingCharge ?? null,
+    },
+    {
+      key: "bdCourier",
+      label: "Bangladesh Courier Charge",
+      show: charges.showBdCourier === true,
+      value: charges.bdCourier ?? null,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-bg-secondary">
@@ -163,6 +186,77 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
         </div>
+
+        {/* ✅ SHIPPING CHARGES — ALWAYS VISIBLE */}
+        <div className="mt-3 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-4 shadow-card-dark md:p-5">
+          <h2 className="mb-1 text-base font-bold text-text-primary md:text-lg">
+            Additional Shipping Charges
+          </h2>
+          <p className="mb-4 text-[11px] text-text-muted md:text-xs">
+            These charges will be confirmed once the parcel arrives in Bangladesh.
+          </p>
+
+          <div className="space-y-2">
+            {chargeRows.map((row) => (
+              <div
+                key={row.key}
+                className="flex items-center justify-between rounded-lg border border-border-subtle bg-white px-3 py-2.5 md:px-4 md:py-3"
+              >
+                <span className="text-xs font-medium text-text-secondary md:text-sm">
+                  {row.label}
+                </span>
+                {row.show && row.value != null && row.value > 0 ? (
+                  <span className="text-sm font-bold text-red-primary md:text-base">
+                    {formatBDT(row.value)}
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-text-muted md:text-base">
+                    —
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 rounded-lg border border-gold-primary/40 bg-white px-3 py-3 md:px-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-primary md:text-sm">
+                Total Extra Charges
+              </span>
+              <span className="text-base font-bold text-red-primary md:text-lg">
+                {formatBDT(
+                  chargeRows.reduce((sum, r) => {
+                    if (r.show && r.value != null && r.value > 0) {
+                      return sum + r.value;
+                    }
+                    return sum;
+                  }, 0)
+                )}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* PAYMENT SUMMARY (if any due) */}
+        {(order.paidAmount ?? 0) > 0 && (
+          <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+            <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Payment</h2>
+            <div className="space-y-1.5 text-xs md:text-sm">
+              <div className="flex justify-between text-text-secondary">
+                <span>Paid</span>
+                <span className="font-semibold text-success">
+                  {formatBDT(order.paidAmount ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between text-text-secondary">
+                <span>Due</span>
+                <span className="font-semibold text-red-primary">
+                  {formatBDT(Math.max(0, order.total - (order.paidAmount ?? 0)))}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

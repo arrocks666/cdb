@@ -14,18 +14,50 @@ import {
 import { db } from "./firebase";
 
 export type Coupon = {
-  code: string;          // "CDB-4F2A91"
-  amount: number;        // 100 = ৳100 off
-  createdAt: number;     // epoch ms
-  expiresAt: number;     // epoch ms
+  code: string;
+  amount: number;         // ✅ taka amount (100 = ৳100 off)
+  createdAt: number;
+  expiresAt: number;
   used: boolean;
   usedAt?: number;
   orderId?: string;
 };
 
-/**
- * Generate a unique coupon code like CDB-4F2A91.
- */
+// ✅ Raw shape from Firestore — might have "amount" OR legacy "percent"
+type RawCoupon = {
+  code?: string;
+  amount?: number;
+  percent?: number;
+  createdAt?: number;
+  expiresAt?: number;
+  used?: boolean;
+  usedAt?: number;
+  orderId?: string;
+};
+
+// ✅ Normalize any Firestore coupon → our canonical shape
+// Legacy coupons stored "percent" — treat that number as a flat taka amount.
+// (No percentage math — admin was entering the taka value in a field named "percent".)
+function normalizeCoupon(raw: RawCoupon): Coupon | null {
+  if (!raw || !raw.code) return null;
+  const amount =
+    typeof raw.amount === "number"
+      ? raw.amount
+      : typeof raw.percent === "number"
+      ? raw.percent
+      : 0;
+
+  return {
+    code: raw.code,
+    amount,
+    createdAt: raw.createdAt ?? 0,
+    expiresAt: raw.expiresAt ?? 0,
+    used: !!raw.used,
+    usedAt: raw.usedAt,
+    orderId: raw.orderId,
+  };
+}
+
 export function generateCouponCode(): string {
   const chars = "ABCDEF0123456789";
   let code = "CDB-";
@@ -36,8 +68,7 @@ export function generateCouponCode(): string {
 }
 
 /**
- * Give a coupon to a specific user.
- * Returns the new coupon.
+ * Give a coupon to a specific user (amount in taka).
  */
 export async function giveCoupon(
   uid: string,
@@ -62,15 +93,18 @@ export async function giveCoupon(
 }
 
 /**
- * Read all coupons for a user.
+ * Read all coupons for a user (normalized from legacy/current shapes).
  */
 export async function getUserCoupons(uid: string): Promise<Coupon[]> {
   try {
     const ref = doc(db, "users", uid);
     const snap = await getDoc(ref);
     if (!snap.exists()) return [];
-    const data = snap.data() as { coupons?: Coupon[] };
-    return data.coupons ?? [];
+    const data = snap.data() as { coupons?: RawCoupon[] };
+    const raw = data.coupons ?? [];
+    return raw
+      .map(normalizeCoupon)
+      .filter((c): c is Coupon => c !== null && c.amount > 0);
   } catch (err) {
     console.error("Error reading coupons:", err);
     return [];
@@ -97,14 +131,24 @@ export async function markCouponUsed(
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("User not found");
 
-  const data = snap.data() as { coupons?: Coupon[] };
+  const data = snap.data() as { coupons?: RawCoupon[] };
   const coupons = data.coupons ?? [];
 
-  const updated = coupons.map((c) =>
-    c.code === coupon.code
-      ? { ...c, used: true, usedAt: Date.now(), orderId }
-      : c
-  );
+  const updated = coupons.map((c) => {
+    if (c.code !== coupon.code) return c;
+    // ✅ Migrate on write: if it had "percent", rename to "amount"
+    const migrated: RawCoupon & { amount?: number } = { ...c };
+    if (typeof migrated.amount !== "number" && typeof migrated.percent === "number") {
+      migrated.amount = migrated.percent;
+    }
+    delete migrated.percent;
+    return {
+      ...migrated,
+      used: true,
+      usedAt: Date.now(),
+      orderId,
+    };
+  });
 
   await updateDoc(ref, { coupons: updated });
 }
@@ -120,10 +164,18 @@ export type AdminUser = {
 export async function getAllUsers(): Promise<AdminUser[]> {
   try {
     const snap = await getDocs(collection(db, "users"));
-    return snap.docs.map((d) => ({
-      uid: d.id,
-      ...(d.data() as Omit<AdminUser, "uid">),
-    }));
+    return snap.docs.map((d) => {
+      const data = d.data() as { coupons?: RawCoupon[] } & Omit<AdminUser, "uid" | "coupons">;
+      const rawCoupons = data.coupons ?? [];
+      const normalized = rawCoupons
+        .map(normalizeCoupon)
+        .filter((c): c is Coupon => c !== null);
+      return {
+        uid: d.id,
+        ...data,
+        coupons: normalized,
+      };
+    });
   } catch (err) {
     console.error("Error fetching users:", err);
     return [];

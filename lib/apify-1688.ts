@@ -16,9 +16,7 @@ const APIFY_1688_ACTOR_ID = process.env.APIFY_1688_ACTOR_ID;
 if (!APIFY_TOKEN) {
   throw new Error("Missing APIFY_TOKEN in .env.local");
 }
-if (!APIFY_1688_ACTOR_ID) {
-  throw new Error("Missing APIFY_1688_ACTOR_ID in .env.local");
-}
+
 
 export type Raw1688Product = {
   imageUrl: string;

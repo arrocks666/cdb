@@ -19,7 +19,7 @@ const ZEN_ACTOR_ID =
   process.env.APIFY_1688_SCRAPER_ID || "zen-studio~1688-wholesale-scraper";
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN");
-if (!ZEN_ACTOR_ID) throw new Error("Missing APIFY_1688_SCRAPER_ID");
+
 
 export type ZenSkuProp = {
   name: string;

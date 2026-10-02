@@ -6,8 +6,10 @@ import {
   saveSettings,
   DEFAULT_SETTINGS,
   DEFAULT_MARKUP_TIERS,
+  DEFAULT_FAQS,
   type StoreSettings,
   type MarkupTier,
+  type FaqItem,
 } from "@/lib/firestoreSettings";
 
 export default function AdminSettingsPage() {
@@ -49,13 +51,19 @@ export default function AdminSettingsPage() {
         cnyToUsd: settings.cnyToUsd,
         usdToBdt: settings.usdToBdt,
         returnPolicy: settings.returnPolicy,
+        termsPolicy: settings.termsPolicy,
         deliveryInfo: settings.deliveryInfo,
         howToOrder: settings.howToOrder,
+        faqItems: settings.faqItems,
         contactPhone: settings.contactPhone,
         contactEmail: settings.contactEmail,
         contactAddress: settings.contactAddress,
+        ownerName: settings.ownerName,
         whatsappNumber: settings.whatsappNumber,
         whatsappNumber2: settings.whatsappNumber2,
+        facebookUrl: settings.facebookUrl,
+        instagramUrl: settings.instagramUrl,
+        footerDescription: settings.footerDescription,
         byAirRate1: settings.byAirRate1,
         byAirRate2: settings.byAirRate2,
         byAirDays: settings.byAirDays,
@@ -66,6 +74,7 @@ export default function AdminSettingsPage() {
         payNowPercent: settings.payNowPercent,
         defaultWeightKg: settings.defaultWeightKg,
         shippingWarning: settings.shippingWarning,
+        shippingCharge: settings.shippingCharge,
         bkashNumber: settings.bkashNumber,
         nagadNumber: settings.nagadNumber,
         bankName: settings.bankName,
@@ -87,7 +96,6 @@ export default function AdminSettingsPage() {
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (!file.type.startsWith("image/")) {
       alert("Please select an image file");
       return;
@@ -96,18 +104,10 @@ export default function AdminSettingsPage() {
       alert("Logo must be under 30MB");
       return;
     }
-
     setUploadingLogo(true);
     try {
       const { resizeImage } = await import("@/lib/resizeImage");
       const resized = await resizeImage(file, 512, 0.85);
-
-      console.log(
-        `Resized from ${(file.size / 1024).toFixed(0)}KB to ${(
-          resized.size / 1024
-        ).toFixed(0)}KB`
-      );
-
       const fd = new FormData();
       fd.append("image", resized);
       const res = await fetch("/api/admin/upload", {
@@ -130,7 +130,6 @@ export default function AdminSettingsPage() {
     e.preventDefault();
     setPassError(null);
     setPassSuccess(false);
-
     if (newPass.length < 6) {
       setPassError("New password must be at least 6 characters");
       return;
@@ -139,7 +138,6 @@ export default function AdminSettingsPage() {
       setPassError("New passwords do not match");
       return;
     }
-
     setChangingPass(true);
     try {
       const res = await fetch("/api/admin/password", {
@@ -178,9 +176,7 @@ export default function AdminSettingsPage() {
   const updateTier = (id: string, patch: Partial<MarkupTier>) => {
     update(
       "markupTiers",
-      settings.markupTiers.map((t) =>
-        t.id === id ? { ...t, ...patch } : t
-      )
+      settings.markupTiers.map((t) => (t.id === id ? { ...t, ...patch } : t))
     );
   };
 
@@ -198,6 +194,40 @@ export default function AdminSettingsPage() {
   const resetTiers = () => {
     if (!confirm("Reset markup tiers to default?")) return;
     update("markupTiers", DEFAULT_MARKUP_TIERS);
+  };
+
+  // ✅ FAQ helpers
+  const addFaq = () => {
+    if (settings.faqItems.length >= 10) {
+      alert("Maximum 10 FAQs allowed");
+      return;
+    }
+    const newFaq: FaqItem = {
+      id: `faq-${Date.now()}`,
+      q: "",
+      a: "",
+    };
+    update("faqItems", [...settings.faqItems, newFaq]);
+  };
+
+  const updateFaq = (id: string, patch: Partial<FaqItem>) => {
+    update(
+      "faqItems",
+      settings.faqItems.map((f) => (f.id === id ? { ...f, ...patch } : f))
+    );
+  };
+
+  const removeFaq = (id: string) => {
+    if (!confirm("Remove this FAQ?")) return;
+    update(
+      "faqItems",
+      settings.faqItems.filter((f) => f.id !== id)
+    );
+  };
+
+  const resetFaqs = () => {
+    if (!confirm("Reset FAQs to default 10?")) return;
+    update("faqItems", DEFAULT_FAQS);
   };
 
   if (loading) {
@@ -235,7 +265,6 @@ export default function AdminSettingsPage() {
           <p className="mb-4 text-xs text-text-muted">
             Upload any square logo (any size — up to 30MB). It will be auto-compressed to a 512×512 icon before upload.
           </p>
-
           <div className="flex items-center gap-4">
             <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-bg-input">
               {settings.logoUrl ? (
@@ -250,7 +279,6 @@ export default function AdminSettingsPage() {
                 </div>
               )}
             </div>
-
             <div className="flex-1">
               <input
                 type="file"
@@ -281,6 +309,26 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
+        {/* GLOBAL SHIPPING CHARGE */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
+            Global Shipping Charge
+          </h2>
+          <p className="mb-4 text-xs text-text-muted">
+            Flat shipping charge shown at cart, checkout, and order pages. Set to <strong>0</strong> to show "Free Shipping" everywhere.
+          </p>
+          <NumField
+            label="Shipping Charge (৳)"
+            value={settings.shippingCharge}
+            onChange={(v) => update("shippingCharge", v)}
+          />
+          {settings.shippingCharge === 0 && (
+            <p className="mt-2 text-[11px] font-semibold text-success">
+              ✓ Currently set to FREE — customers will see ৳0 shipping.
+            </p>
+          )}
+        </section>
+
         {/* MARKUP TIERS */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <div className="mb-4 flex items-center justify-between">
@@ -307,7 +355,6 @@ export default function AdminSettingsPage() {
               </button>
             </div>
           </div>
-
           <div className="space-y-2">
             {settings.markupTiers.map((tier) => (
               <div
@@ -362,7 +409,6 @@ export default function AdminSettingsPage() {
                   <button
                     onClick={() => removeTier(tier.id)}
                     className="flex h-9 w-9 items-center justify-center rounded border border-red-primary/30 text-red-primary transition hover:bg-red-primary hover:text-white"
-                    aria-label="Remove tier"
                   >
                     ✕
                   </button>
@@ -372,14 +418,12 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Currency */}
+        {/* CURRENCY */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
             Currency Conversion
           </h2>
-          <p className="mb-4 text-xs text-text-muted">
-            CNY → USD → BDT.
-          </p>
+          <p className="mb-4 text-xs text-text-muted">CNY → USD → BDT.</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <NumField
               label="CNY → USD rate"
@@ -396,7 +440,7 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Shipping Method & Payment */}
+        {/* SHIPPING METHOD & PAYMENT */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
             Shipping Method & Payment
@@ -404,7 +448,6 @@ export default function AdminSettingsPage() {
           <p className="mb-4 text-xs text-text-muted">
             By Air / By Sea details, visibility, and payment split.
           </p>
-
           <div className="space-y-4">
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -442,7 +485,6 @@ export default function AdminSettingsPage() {
                 />
               </div>
             </div>
-
             <div className="border-t border-border-subtle pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gold-primary">
@@ -474,7 +516,6 @@ export default function AdminSettingsPage() {
                 />
               </div>
             </div>
-
             <div className="border-t border-border-subtle pt-4">
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gold-primary">
                 Payment Split
@@ -493,7 +534,6 @@ export default function AdminSettingsPage() {
                 />
               </div>
             </div>
-
             <div className="border-t border-border-subtle pt-4">
               <TextArea
                 label="Shipping Warning Text (shows in red)"
@@ -505,17 +545,23 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Product page content */}
+        {/* PRODUCT PAGE CONTENT */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Product Page Content
           </h2>
           <div className="space-y-3">
             <TextArea
-              label="Return Policy"
+              label="Return Policy (shows on product + help page)"
               value={settings.returnPolicy}
               onChange={(v) => update("returnPolicy", v)}
               rows={3}
+            />
+            <TextArea
+              label="Terms & Conditions (shows on help page)"
+              value={settings.termsPolicy}
+              onChange={(v) => update("termsPolicy", v)}
+              rows={5}
             />
             <TextArea
               label="Delivery Info"
@@ -532,7 +578,106 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Shipping Details (Bangla) — বিস্তারিত modal */}
+        {/* FAQ EDITOR */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
+                FAQ ({settings.faqItems.length}/10)
+              </h2>
+              <p className="mt-0.5 text-xs text-text-muted">
+                These appear on the Help page. Max 10.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={resetFaqs}
+                className="rounded-lg border border-border-subtle bg-white px-3 py-1.5 text-xs font-semibold text-text-secondary transition hover:border-red-primary hover:text-red-primary"
+              >
+                Reset
+              </button>
+              <button
+                onClick={addFaq}
+                disabled={settings.faqItems.length >= 10}
+                className="rounded-lg bg-gold-primary px-3 py-1.5 text-xs font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+              >
+                + Add FAQ
+              </button>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {settings.faqItems.map((faq, idx) => (
+              <div
+                key={faq.id}
+                className="rounded-lg border border-border-subtle bg-bg-input p-3"
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    FAQ {idx + 1}
+                  </span>
+                  <button
+                    onClick={() => removeFaq(faq.id)}
+                    className="text-[11px] font-semibold text-red-primary underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={faq.q}
+                  onChange={(e) => updateFaq(faq.id, { q: e.target.value })}
+                  placeholder="Question"
+                  className="mb-2 w-full rounded border border-border-subtle bg-white px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                />
+                <textarea
+                  value={faq.a}
+                  onChange={(e) => updateFaq(faq.id, { a: e.target.value })}
+                  placeholder="Answer"
+                  rows={2}
+                  className="w-full resize-none rounded border border-border-subtle bg-white px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* FOOTER CONTENT */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
+            Footer Content
+          </h2>
+          <p className="mb-4 text-xs text-text-muted">
+            Shown at the bottom of every customer-facing page.
+          </p>
+          <div className="space-y-3">
+            <TextField
+              label="Owner / Business Name (shown as 'Owner Name (Recommended)')"
+              value={settings.ownerName}
+              onChange={(v) => update("ownerName", v)}
+              placeholder="e.g. Md. Rahim Uddin"
+            />
+            <TextArea
+              label="Footer Description"
+              value={settings.footerDescription}
+              onChange={(v) => update("footerDescription", v)}
+              rows={4}
+            />
+            <TextField
+              label="Facebook Page URL"
+              value={settings.facebookUrl}
+              onChange={(v) => update("facebookUrl", v)}
+              placeholder="https://facebook.com/yourpage"
+            />
+            <TextField
+              label="Instagram Profile URL"
+              value={settings.instagramUrl}
+              onChange={(v) => update("instagramUrl", v)}
+              placeholder="https://instagram.com/yourprofile"
+            />
+          </div>
+        </section>
+
+        {/* SHIPPING DETAILS (Bangla) */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
             Shipping Details (বিস্তারিত)
@@ -548,13 +693,16 @@ export default function AdminSettingsPage() {
               value={settings.shippingDetailsBangla ?? ""}
               onChange={(e) => update("shippingDetailsBangla", e.target.value)}
               rows={14}
-              placeholder="ক্যাটাগরিঃ এ - ৮০০টাকা প্রতি কেজি&#10;...&#10;&#10;(Leave empty to use default)"
+              placeholder="ক্যাটাগরিঃ এ - ৮০০টাকা প্রতি কেজি
+...
+
+(Leave empty to use default)"
               className="w-full resize-none rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
             />
           </div>
         </section>
 
-        {/* Contact + WhatsApp */}
+        {/* CONTACT + WHATSAPP */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Contact & WhatsApp
@@ -568,14 +716,11 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Payment Numbers */}
+        {/* PAYMENT NUMBERS */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Payment Numbers
           </h2>
-          <p className="mb-4 text-xs text-text-muted">
-            Shown to customers at checkout.
-          </p>
           <div className="space-y-3">
             <TextField label="bKash Number" value={settings.bkashNumber} onChange={(v) => update("bkashNumber", v)} placeholder="01711-111111" />
             <TextField label="Nagad Number" value={settings.nagadNumber} onChange={(v) => update("nagadNumber", v)} placeholder="01811-111111" />
@@ -585,7 +730,7 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Save */}
+        {/* SAVE BUTTON */}
         <div className="flex justify-end">
           <button
             onClick={handleSave}
@@ -596,7 +741,7 @@ export default function AdminSettingsPage() {
           </button>
         </div>
 
-        {/* Password */}
+        {/* PASSWORD */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
             Change Admin Password
@@ -604,12 +749,10 @@ export default function AdminSettingsPage() {
           <p className="mb-4 text-xs text-text-muted">
             Username stays <span className="font-mono font-semibold">cdb</span>.
           </p>
-
           <form onSubmit={handleChangePassword} className="space-y-3">
             <TextField label="Current Password" value={oldPass} onChange={setOldPass} type="password" />
             <TextField label="New Password (min 6 chars)" value={newPass} onChange={setNewPass} type="password" />
             <TextField label="Confirm New Password" value={confirmPass} onChange={setConfirmPass} type="password" />
-
             {passError && (
               <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">
                 {passError}
@@ -620,7 +763,6 @@ export default function AdminSettingsPage() {
                 Password updated successfully
               </div>
             )}
-
             <div className="flex justify-end">
               <button
                 type="submit"

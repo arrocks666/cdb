@@ -8,7 +8,7 @@ import { useWishlist } from "@/lib/WishlistContext";
 import { useCart } from "@/lib/CartContext";
 import { useWhatsApp } from "@/lib/WhatsAppContext";
 import { useLiveProducts } from "@/lib/LiveProductContext";
-import { LiveProduct } from "@/lib/live-search";
+import { LiveProduct } from "@/lib/liveProduct";
 import { hasChinese, translateLocation } from "@/lib/chinaLocations";
 import {
   loadSettings,
@@ -52,7 +52,6 @@ export default function LiveProductPage({
   const [imgFailed, setImgFailed] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
   const [shippingMethod, setShippingMethod] = useState<"air" | "sea">("air");
-  const [showWeightDetails, setShowWeightDetails] = useState(false);
   const [showShippingDetails, setShowShippingDetails] = useState(false);
   const [selectedColorId, setSelectedColorId] = useState<string>("");
   const [selectedSize, setSelectedSize] = useState<string>("");
@@ -70,7 +69,6 @@ export default function LiveProductPage({
     else setNotFound(true);
   }, [id, liveStore]);
 
-  // ⭐ Only set defaults once
   useEffect(() => {
     if (!product) return;
     setSelectedColorId((prev) => prev || product.colors?.[0]?.id || "");
@@ -78,7 +76,6 @@ export default function LiveProductPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
 
-  // ✅ Reset thumbnail & image-fail flag when color changes
   useEffect(() => {
     setActiveImage(0);
     setImgFailed(false);
@@ -128,7 +125,6 @@ export default function LiveProductPage({
 
   const gallery = product.gallery?.length ? product.gallery : [product.image];
 
-  // ✅ Variant-aware image: if a color has its own photo, use it.
   const variantImage =
     selectedColor?.image ||
     product.variants?.find((v) => v.colorId === selectedColorId && v.image)
@@ -164,7 +160,7 @@ export default function LiveProductPage({
         priceMax: product.priceMax,
         oldPrice: product.oldPrice,
         discount: product.discount,
-        image: currentImage, // ✅ uses the currently-shown variant image
+        image: currentImage,
         rating: product.rating,
         reviews: product.reviews,
         description: product.description,
@@ -197,7 +193,7 @@ export default function LiveProductPage({
       price: product.price,
       oldPrice: product.oldPrice,
       discount: product.discount,
-      image: currentImage, // ✅ wishlist too
+      image: currentImage,
       rating: product.rating,
       reviews: product.reviews,
       description: product.description,
@@ -656,6 +652,28 @@ export default function LiveProductPage({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {settings.returnPolicy && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
+                  Return Policy
+                </h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
+                  {settings.returnPolicy}
+                </p>
+              </div>
+            )}
+
+            {settings.termsPolicy && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
+                  Terms & Conditions
+                </h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
+                  {settings.termsPolicy}
+                </p>
               </div>
             )}
           </div>

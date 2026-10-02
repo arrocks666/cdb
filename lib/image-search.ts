@@ -1,9 +1,10 @@
 // lib/image-search.ts
 // Image search pipeline:
-//   1. imgbb → host uploaded image, get public URL
-//   2. Clawst (APIFY_IMAGE_SEARCH_ACTOR_ID) → 1688 offerIds
-//   3. Pizani (APIFY_PIZANI_ACTOR_ID) → full product with variants
-//   4. Merge → LiveProduct
+//   1. crawleast/1688-image-search-scraper → accepts base64 directly, returns 1688 offerIds + listing data
+//   2. pizani/1688-product-scraper → full product with variants for each offerId
+//   3. Merge → LiveProduct
+//
+// No image hosting is needed — the actor takes base64 directly.
 
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
@@ -20,15 +21,14 @@ import type { LiveProduct } from "./live-search";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const APIFY_IMAGE_SEARCH_ACTOR_ID = process.env.APIFY_IMAGE_SEARCH_ACTOR_ID;
-const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN in .env.local");
 if (!APIFY_IMAGE_SEARCH_ACTOR_ID)
   throw new Error("Missing APIFY_IMAGE_SEARCH_ACTOR_ID in .env.local");
-if (!IMGBB_API_KEY) throw new Error("Missing IMGBB_API_KEY in .env.local");
 
 const PRODUCTS_WANTED = 3;
 const ASK_FOR = 5;
+const MIN_PRICE_BDT = 20; // reject sub-20 BDT products
 
 const IS_DEV00 = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("dev00");
 const IS_CRAWLEAST = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("crawleast");
@@ -60,67 +60,18 @@ type RawImageSearchResult = {
   [key: string]: unknown;
 };
 
-// ---- imgbb upload ----
+// ---- Helper: strip data URL prefix if present ----
 
-export async function rehostImage(base64: string): Promise<string> {
-  const match = base64.match(/^data:image\/(\w+);base64,(.+)$/);
-  const cleanBase64 = match
-    ? match[2]
-    : base64.replace(/^data:image\/\w+;base64,/, "");
-
-  if (!cleanBase64) throw new Error("Invalid image data");
-
-  const MAX_ATTEMPTS = 3;
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
-
-    try {
-      const formData = new FormData();
-      formData.append("key", IMGBB_API_KEY!);
-      formData.append("image", cleanBase64);
-      formData.append("expiration", "0"); // never expire
-
-      const response = await fetch("https://api.imgbb.com/1/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        lastError = new Error(
-          `imgbb failed (${response.status})${text ? `: ${text.slice(0, 120)}` : ""}`
-        );
-        console.warn(`[imgbb] attempt ${attempt + 1}/${MAX_ATTEMPTS} → ${lastError.message}`);
-        continue;
-      }
-
-      const json = (await response.json()) as {
-        data?: { url?: string; display_url?: string };
-        success?: boolean;
-      };
-
-      const url = json?.data?.url || json?.data?.display_url;
-      if (!url || !url.startsWith("https://")) {
-        lastError = new Error("imgbb returned invalid URL");
-        console.warn(`[imgbb] attempt ${attempt + 1}/${MAX_ATTEMPTS} → invalid URL`);
-        continue;
-      }
-
-      console.log(`[imgbb] uploaded → ${url}`);
-      return url;
-    } catch (err: any) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`[imgbb] attempt ${attempt + 1}/${MAX_ATTEMPTS} error: ${lastError.message}`);
-      continue;
-    }
+function toRawBase64(input: string): string {
+  if (input.includes(",")) {
+    // looks like "data:image/jpeg;base64,XXX"
+    const idx = input.indexOf(",");
+    return input.slice(idx + 1);
   }
-
-  throw lastError ?? new Error("imgbb upload failed");
+  return input;
 }
 
-// ---- Image search actor ----
+// ---- Image search actor (base64, no hosting needed) ----
 
 function extractListings(raw: RawImageSearchResult): RawListing[] {
   if (Array.isArray(raw.results)) return raw.results as RawListing[];
@@ -142,25 +93,24 @@ function extractListings(raw: RawImageSearchResult): RawListing[] {
   return [];
 }
 
-async function findListingsByImage(imageUrl: string): Promise<RawListing[]> {
-  let input: Record<string, unknown>;
-  if (IS_DEV00) {
-    input = {
-      imageUrl,
-      maxResults: ASK_FOR,
-      destination: "1688",
-      currency: "cny",
-    };
-  } else {
-    input = {
-      imageUrl,
-      maxResults: ASK_FOR,
-    };
-  }
+async function findListingsByBase64(
+  dataUrlOrBase64: string
+): Promise<RawListing[]> {
+  const rawBase64 = toRawBase64(dataUrlOrBase64);
+  if (!rawBase64) throw new Error("Invalid image data");
+
+  // crawleast actor accepts `imagesBase64` (array of raw base64 strings)
+  const input: Record<string, unknown> = {
+    imagesBase64: [rawBase64],
+    maxImages: 1,
+    maxResultsPerImage: ASK_FOR,
+  };
 
   const url = `https://api.apify.com/v2/acts/${APIFY_IMAGE_SEARCH_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180`;
   const startedAt = Date.now();
-  console.log(`[image-search] input: ${JSON.stringify(input)}`);
+  console.log(
+    `[image-search] POST actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (base64 size: ${rawBase64.length} chars)`
+  );
 
   const response = await fetch(url, {
     method: "POST",
@@ -201,6 +151,8 @@ function fallbackToLive(raw: RawListing): LiveProduct | null {
   if (priceCny <= 0) return null;
 
   const priceBdt = Math.round(priceCny * 18.5);
+  if (priceBdt < MIN_PRICE_BDT) return null;
+
   const oldPrice = Math.round(priceBdt * 1.25);
 
   return {
@@ -276,21 +228,15 @@ export async function runImageSearchJob(
 ): Promise<void> {
   const t0 = Date.now();
   try {
-    let hostedUrl = imageBase64OrUrl;
-    if (imageBase64OrUrl.startsWith("data:")) {
-      hostedUrl = await rehostImage(imageBase64OrUrl);
-    }
-    console.log(`[job ${jobId}] imgbb done at +${Date.now() - t0}ms`);
+    updateJob(jobId, { status: "searching" });
 
-    updateJob(jobId, { status: "searching", imageUrl: hostedUrl });
-
-    const listings = await findListingsByImage(hostedUrl);
+    const listings = await findListingsByBase64(imageBase64OrUrl);
     console.log(`[job ${jobId}] image search done at +${Date.now() - t0}ms`);
 
     if (listings.length === 0) {
       updateJob(jobId, {
         status: "done",
-        error: "No matching products found.",
+        error: "No matching products found. Try a clearer photo.",
       });
       return;
     }
@@ -313,7 +259,7 @@ export async function runImageSearchJob(
     if (offerIds.length === 0) {
       updateJob(jobId, {
         status: "done",
-        error: "No matching products found.",
+        error: "No matching products found. Try a clearer photo.",
       });
       return;
     }
@@ -326,7 +272,6 @@ export async function runImageSearchJob(
 
     console.log(`[job ${jobId}] fetching details via pizani (parallel)...`);
 
-    // Parallel — pizani has no rate limits, safe to fire all 3 at once.
     const tasks = offerIds.map(async (offerId) => {
       const tStart = Date.now();
       try {
@@ -346,7 +291,7 @@ export async function runImageSearchJob(
         );
       }
 
-      // Fallback
+      // Fallback (Clawst listing without Pizani enrichment)
       const raw = listings.find(
         (l) => String(l.offerId ?? l.productId) === offerId
       );
@@ -355,6 +300,8 @@ export async function runImageSearchJob(
         if (fallback) {
           pushProduct(jobId, fallback);
           console.log(`[job ${jobId}] ✓ fallback ${fallback.id}`);
+        } else {
+          console.log(`[job ${jobId}] ✗ fallback rejected (price too low)`);
         }
       }
     });
@@ -367,7 +314,7 @@ export async function runImageSearchJob(
     console.error(`[job ${jobId}] pipeline failed:`, err);
     updateJob(jobId, {
       status: "error",
-      error: err?.message || "Search failed",
+      error: err?.message || "Search failed. Please try again.",
     });
   }
 }

@@ -26,9 +26,10 @@ export default function Header() {
 
   const showSearchBar = pathname !== "/search";
 
+  // ✅ Reload settings on every pathname change → picks up fresh logo
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
-  }, []);
+  }, [pathname]);
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();

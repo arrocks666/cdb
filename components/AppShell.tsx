@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Header from "./Header";
+import Footer from "./Footer";
 import BottomNav from "./BottomNav";
 import {
   trackVisit,
@@ -37,6 +38,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <Header />
       <main className="flex-1 pb-20 md:pb-4">{children}</main>
+      <Footer />
       <BottomNav />
     </>
   );

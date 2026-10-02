@@ -199,7 +199,6 @@ export default function ProductPage({
 
       <div className="mx-auto max-w-7xl px-3 py-3 md:px-4 md:py-6">
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-8">
-          {/* IMAGES */}
           <div>
             <div className="relative aspect-square overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm">
               <div className="flex h-full items-center justify-center p-4">
@@ -253,7 +252,6 @@ export default function ProductPage({
             </div>
           </div>
 
-          {/* DETAILS */}
           <div>
             <h1 className="text-xl font-bold leading-tight text-text-primary md:text-3xl">
               {product.title}
@@ -309,7 +307,6 @@ export default function ProductPage({
               </div>
             </div>
 
-            {/* COLOR SELECTOR */}
             {colors.length > 0 && (
               <div className="mt-5">
                 <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
@@ -382,7 +379,6 @@ export default function ProductPage({
               </div>
             )}
 
-            {/* SIZE SELECTOR */}
             {sizes.length > 0 && (
               <div className="mt-5">
                 <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
@@ -414,7 +410,6 @@ export default function ProductPage({
               </div>
             )}
 
-            {/* SHIPPING */}
             <div className="mt-5">
               <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
                 Shipping Method
@@ -465,7 +460,6 @@ export default function ProductPage({
               </div>
             </div>
 
-            {/* QUANTITY */}
             <div className="mt-4 flex items-center justify-between">
               <span className="text-xs font-bold text-text-primary md:text-sm">
                 Quantity
@@ -489,7 +483,6 @@ export default function ProductPage({
               </div>
             </div>
 
-            {/* PRICE BREAKDOWN */}
             <div className="mt-4 space-y-2 border-t border-border-subtle pt-4 text-sm">
               <div className="flex justify-between text-text-secondary">
                 <span>Product price</span>
@@ -525,7 +518,6 @@ export default function ProductPage({
               </div>
             </div>
 
-            {/* WEIGHT BOX */}
             <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
@@ -603,7 +595,6 @@ export default function ProductPage({
               Order via WhatsApp
             </button>
 
-            {/* SPECS */}
             {product.specs && product.specs.length > 0 && (
               <div className="mt-6 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-3 text-sm font-bold text-text-primary md:text-base">
@@ -665,6 +656,17 @@ export default function ProductPage({
                 </h2>
                 <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
                   {settings.returnPolicy}
+                </p>
+              </div>
+            )}
+
+            {settings.termsPolicy && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4">
+                <h2 className="mb-2 text-sm font-bold text-text-primary md:text-base">
+                  Terms & Conditions
+                </h2>
+                <p className="whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
+                  {settings.termsPolicy}
                 </p>
               </div>
             )}

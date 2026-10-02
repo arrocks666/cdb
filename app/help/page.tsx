@@ -8,14 +8,6 @@ import {
   type StoreSettings,
 } from "@/lib/firestoreSettings";
 
-const faqs = [
-  { q: "How do I place an order?", a: "Browse products, tap 'Add to Cart' on items you like, then go to your cart and tap 'Proceed to Checkout'. Follow the 3 steps: address, payment, and confirm." },
-  { q: "How long does shipping take?", a: "Delivery from China to Bangladesh typically takes 7–15 business days." },
-  { q: "How can I track my order?", a: "Go to Account → My Orders, and tap on any order to see its live tracking timeline." },
-  { q: "How do I cancel an order?", a: "You can cancel before the order is processed. Once shipped, cancellation is not possible." },
-  { q: "How do refunds work?", a: "Request a return within 7 days. Refunds go to your bKash/Nagad within 3–5 business days." },
-];
-
 export default function HelpPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -25,6 +17,8 @@ export default function HelpPage() {
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
   }, []);
+
+  const faqs = settings.faqItems ?? [];
 
   const filtered = faqs.filter((f) =>
     f.q.toLowerCase().includes(search.toLowerCase())
@@ -45,7 +39,47 @@ export default function HelpPage() {
       </div>
 
       <div className="mx-auto max-w-3xl px-3 py-4 md:px-4 md:py-6">
-        <div className="relative">
+        {/* ABOUT */}
+        <section id="about" className="scroll-mt-32 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+          <h2 className="text-base font-bold text-text-primary md:text-lg">About</h2>
+          <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
+            {settings.footerDescription}
+          </p>
+        </section>
+
+        {/* CONTACT */}
+        <section id="contact" className="scroll-mt-32 mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+          <h2 className="text-base font-bold text-text-primary md:text-lg">Contact</h2>
+          <div className="mt-3 space-y-2.5 text-xs md:text-sm">
+            {settings.contactAddress && (
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-gold-primary">📍</span>
+                <p className="whitespace-pre-line text-text-secondary">{settings.contactAddress}</p>
+              </div>
+            )}
+            {settings.contactEmail && (
+              <a href={`mailto:${settings.contactEmail}`} className="flex items-center gap-2 text-text-secondary transition hover:text-gold-primary">
+                <span className="text-gold-primary">✉️</span>
+                {settings.contactEmail}
+              </a>
+            )}
+            {settings.contactPhone && (
+              <a href={`tel:${settings.contactPhone.replace(/\s/g, "")}`} className="flex items-center gap-2 text-text-secondary transition hover:text-gold-primary">
+                <span className="text-gold-primary">📞</span>
+                {settings.contactPhone}
+              </a>
+            )}
+            {settings.ownerName && (
+              <div className="flex items-center gap-2 text-text-secondary">
+                <span className="text-gold-primary">👤</span>
+                <span>{settings.ownerName}</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* FAQ SEARCH */}
+        <div className="relative mt-5">
           <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <circle cx="11" cy="11" r="7" />
@@ -61,32 +95,89 @@ export default function HelpPage() {
           />
         </div>
 
-        <div className="mt-5">
-          <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
-            Popular Questions
+        {/* FAQ */}
+        {faqs.length > 0 && (
+          <div className="mt-5">
+            <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+              Popular Questions
+            </h2>
+            {filtered.length === 0 ? (
+              <p className="rounded-lg border border-border-subtle bg-white p-4 text-center text-xs text-text-muted md:text-sm">
+                No results found for "{search}"
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {filtered.map((faq, i) => {
+                  const isOpen = openIndex === i;
+                  return (
+                    <div key={faq.id} className="overflow-hidden rounded-lg border border-border-subtle bg-white shadow-card-dark">
+                      <button onClick={() => setOpenIndex(isOpen ? null : i)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                        <span className="text-sm font-medium text-text-primary md:text-base">{faq.q}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 text-text-muted transition-transform ${isOpen ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
+                      </button>
+                      {isOpen && <div className="border-t border-border-subtle bg-bg-input px-4 py-3 text-xs leading-relaxed text-text-secondary md:text-sm">{faq.a}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* RETURNS */}
+        {settings.returnPolicy && (
+          <section id="returns" className="scroll-mt-32 mt-5 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+            <h2 className="text-base font-bold text-text-primary md:text-lg">
+              Returns & Refund
+            </h2>
+            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
+              {settings.returnPolicy}
+            </p>
+          </section>
+        )}
+
+        {/* TERMS */}
+        {settings.termsPolicy && (
+          <section id="terms" className="scroll-mt-32 mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+            <h2 className="text-base font-bold text-text-primary md:text-lg">
+              Terms & Conditions
+            </h2>
+            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-text-secondary md:text-sm">
+              {settings.termsPolicy}
+            </p>
+          </section>
+        )}
+
+        {/* PRIVACY */}
+        <section id="privacy" className="scroll-mt-32 mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+          <h2 className="text-base font-bold text-text-primary md:text-lg">
+            Privacy Policy
           </h2>
-          {filtered.length === 0 ? (
-            <p className="rounded-lg border border-border-subtle bg-white p-4 text-center text-xs text-text-muted md:text-sm">
-              No results found for "{search}"
+          <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
+            ChinaDailyBazar respects your privacy. We only collect information needed to process your orders and deliver your products — such as your name, phone number, email, and delivery address. We never sell or share your data with third parties. All payment information is handled securely.
+          </p>
+        </section>
+
+        {/* SHIPPING CHARGE */}
+        <section id="shipping" className="scroll-mt-32 mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+          <h2 className="text-base font-bold text-text-primary md:text-lg">
+            Shipping Charge
+          </h2>
+          {settings.shippingCharge === 0 ? (
+            <p className="mt-2 text-xs font-semibold text-success md:text-sm">
+              ✓ Free Shipping — no additional charge for delivery.
             </p>
           ) : (
-            <div className="space-y-2">
-              {filtered.map((faq, i) => {
-                const isOpen = openIndex === i;
-                return (
-                  <div key={faq.q} className="overflow-hidden rounded-lg border border-border-subtle bg-white shadow-card-dark">
-                    <button onClick={() => setOpenIndex(isOpen ? null : i)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-                      <span className="text-sm font-medium text-text-primary md:text-base">{faq.q}</span>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`flex-shrink-0 text-text-muted transition-transform ${isOpen ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9" /></svg>
-                    </button>
-                    {isOpen && <div className="border-t border-border-subtle bg-bg-input px-4 py-3 text-xs leading-relaxed text-text-secondary md:text-sm">{faq.a}</div>}
-                  </div>
-                );
-              })}
-            </div>
+            <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
+              Flat shipping charge of ৳{settings.shippingCharge} applies to all orders.
+            </p>
           )}
-        </div>
+          <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
+            Additional China → Bangladesh courier charges may apply based on product weight. These are calculated after your order arrives in our Bangladesh warehouse.
+          </p>
+        </section>
 
+        {/* CONTACT ROWS */}
         {hasContactInfo && (
           <div className="mt-8">
             <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">

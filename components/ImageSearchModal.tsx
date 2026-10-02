@@ -10,6 +10,9 @@ type Props = {
 
 type Stage = "idle" | "uploading" | "searching" | "loading" | "started";
 
+const NO_MATCH_MSG =
+  "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।";
+
 export default function ImageSearchModal({
   open,
   onClose,
@@ -123,7 +126,8 @@ export default function ImageSearchModal({
             setStage("loading");
           }
 
-          if (count >= 1 || status.status === "done") {
+          // ✅ Found results — close and redirect
+          if (count >= 1) {
             if (pollRef.current) {
               clearInterval(pollRef.current);
               pollRef.current = null;
@@ -131,14 +135,27 @@ export default function ImageSearchModal({
             setStage("started");
             onJobStarted(jobId);
             onClose();
+            return;
           }
 
+          // ✅ Done with 0 results — show Bangla error, keep modal open
+          if (status.status === "done" && count === 0) {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setError(NO_MATCH_MSG);
+            setStage("idle");
+            return;
+          }
+
+          // ✅ Server error — show Bangla error
           if (status.status === "error") {
             if (pollRef.current) {
               clearInterval(pollRef.current);
               pollRef.current = null;
             }
-            setError(status.error || "Search failed");
+            setError(NO_MATCH_MSG);
             setStage("idle");
           }
         } catch (pollErr) {

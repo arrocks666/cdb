@@ -15,7 +15,11 @@ import {
   markCouponUsed,
   type Coupon,
 } from "@/lib/coupons";
-import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
 const PAYMENT_METHODS = [
   { id: "cod", label: "Cash on Delivery", icon: "💵", note: "Pay when you receive" },
@@ -137,7 +141,11 @@ function CheckoutContent() {
   }, [cart.items, selectedKeys.join(","), products]);
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
-  const shipping = rows.length > 0 ? 200 : 0;
+
+  // ✅ Read shipping from settings — 0 means Free
+  const shipping =
+    rows.length > 0 ? settings.shippingCharge ?? 0 : 0;
+
   const discountAmount = appliedCoupon
     ? Math.min(appliedCoupon.amount, subtotal)
     : 0;
@@ -551,7 +559,9 @@ function CheckoutContent() {
                   </div>
                   <div className="flex justify-between text-text-secondary">
                     <span>Shipping</span>
-                    <span className="text-text-primary">{formatBDT(shipping)}</span>
+                    <span className={shipping === 0 ? "font-semibold text-success" : "text-text-primary"}>
+                      {shipping === 0 ? "Free" : formatBDT(shipping)}
+                    </span>
                   </div>
                   {appliedCoupon && discountAmount > 0 && (
                     <div className="flex justify-between text-success">
@@ -640,61 +650,15 @@ function CopyRow({
     <div className="flex items-center justify-between gap-2">
       <span className="text-text-muted">{label}:</span>
       <div className="flex items-center gap-2">
-        <span className="font-mono font-semibold text-text-primary">
-          {value || "—"}
-        </span>
-        {value && (
-          <button
-            onClick={() => onCopy(value)}
-            className="rounded bg-gold-primary/10 px-2 py-0.5 text-[10px] font-semibold text-gold-primary transition hover:bg-gold-primary hover:text-white"
-          >
-            Copy
-          </button>
-        )}
+        <span className="font-mono text-text-primary">{value}</span>
+        <button
+          onClick={() => onCopy(value)}
+          className="text-[10px] font-semibold text-gold-primary underline"
+        >
+          Copy
+        </button>
       </div>
     </div>
-  );
-}
-
-function StepDot({
-  num,
-  label,
-  active,
-  done,
-  onClick,
-}: {
-  num: number;
-  label: string;
-  active: boolean;
-  done: boolean;
-  onClick: () => void;
-}) {
-  const state = done ? "done" : active ? "active" : "pending";
-  return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1">
-      <div
-        className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition ${
-          state === "done"
-            ? "border-success bg-success text-white"
-            : state === "active"
-            ? "border-gold-primary bg-gold-primary text-white shadow-orange-glow"
-            : "border-border-subtle bg-white text-text-muted"
-        }`}
-      >
-        {done ? "✓" : num}
-      </div>
-      <span
-        className={`text-[10px] font-medium md:text-xs ${
-          state === "active"
-            ? "text-gold-primary"
-            : state === "done"
-            ? "text-success"
-            : "text-text-muted"
-        }`}
-      >
-        {label}
-      </span>
-    </button>
   );
 }
 
@@ -725,9 +689,55 @@ function Field({
   );
 }
 
+function StepDot({
+  num,
+  label,
+  active,
+  done,
+  onClick,
+}: {
+  num: number;
+  label: string;
+  active: boolean;
+  done: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1"
+    >
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${
+          done
+            ? "bg-success text-white"
+            : active
+            ? "bg-gold-primary text-white shadow-orange-glow"
+            : "bg-border-subtle text-text-muted"
+        }`}
+      >
+        {done ? "✓" : num}
+      </div>
+      <span
+        className={`text-[10px] font-medium md:text-xs ${
+          active ? "text-gold-primary" : done ? "text-success" : "text-text-muted"
+        }`}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-text-muted">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+        </div>
+      }
+    >
       <CheckoutContent />
     </Suspense>
   );

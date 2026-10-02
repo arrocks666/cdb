@@ -56,9 +56,10 @@ export async function generateInvoice(
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 15;
+  const innerWidth = pageWidth - margin * 2;
   let y = margin;
 
-  // HEADER
+  // ---------- HEADER ----------
   pdf.setFillColor(255, 102, 0);
   pdf.rect(0, 0, pageWidth, 30, "F");
 
@@ -87,7 +88,7 @@ export async function generateInvoice(
 
   y = 40;
 
-  // ORDER INFO
+  // ---------- ORDER INFO ----------
   pdf.setTextColor(34, 34, 34);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(12);
@@ -108,10 +109,31 @@ export async function generateInvoice(
 
   y += 10;
 
-  // CUSTOMER
+  // ---------- CUSTOMER (BILL TO) ----------
+  const custName = order.address?.name || "—";
+  const custPhone = order.address?.phone || "—";
+  const custAddr = order.address?.address || "—";
+  const custDistrict = order.address?.district
+    ? `, ${order.address.district}`
+    : "";
+  const paymentText = `Payment: ${order.paymentMethod}`;
+
+  // ✅ Pre-wrap the address so we know its height
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  const addressLine = `${custAddr}${custDistrict}`;
+  const addressWrapped: string[] = pdf.splitTextToSize(
+    `Address: ${addressLine}`,
+    innerWidth - 6
+  );
+
+  // ✅ Compute box height dynamically
+  // layout: title(6mm) + name(6mm) + phone(6mm) + address lines + padding(6mm)
+  const boxHeight = 6 + 6 + 6 + addressWrapped.length * 5 + 6;
+
   pdf.setDrawColor(229, 229, 229);
   pdf.setFillColor(250, 250, 250);
-  pdf.rect(margin, y, pageWidth - margin * 2, 30, "FD");
+  pdf.rect(margin, y, innerWidth, boxHeight, "FD");
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(10);
@@ -122,29 +144,22 @@ export async function generateInvoice(
   pdf.setFontSize(9);
   pdf.setTextColor(60, 60, 60);
 
-  const custName = order.address?.name || "—";
-  const custPhone = order.address?.phone || "—";
-  const custAddr = order.address?.address || "—";
-  const custDistrict = order.address?.district
-    ? `, ${order.address.district}`
-    : "";
+  let cy = y + 12;
+  pdf.text(`Name: ${custName}`, margin + 3, cy);
+  cy += 6;
+  pdf.text(`Phone: ${custPhone}`, margin + 3, cy);
+  cy += 6;
+  // ✅ Address with proper wrapping — each line spaced 5mm
+  pdf.text(addressWrapped, margin + 3, cy);
 
-  pdf.text(`Name: ${custName}`, margin + 3, y + 12);
-  pdf.text(`Phone: ${custPhone}`, margin + 3, y + 18);
-  pdf.text(`Address: ${custAddr}${custDistrict}`, margin + 3, y + 24);
+  // Payment method — right-aligned on first content row
+  pdf.text(paymentText, pageWidth - margin - 3, y + 12, { align: "right" });
 
-  pdf.text(
-    `Payment: ${order.paymentMethod}`,
-    pageWidth - margin - 3,
-    y + 12,
-    { align: "right" }
-  );
+  y += boxHeight + 8;
 
-  y += 38;
-
-  // ITEMS TABLE
+  // ---------- ITEMS TABLE HEADER ----------
   pdf.setFillColor(255, 102, 0);
-  pdf.rect(margin, y, pageWidth - margin * 2, 8, "F");
+  pdf.rect(margin, y, innerWidth, 8, "F");
 
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
@@ -160,15 +175,37 @@ export async function generateInvoice(
   pdf.setFontSize(9);
   pdf.setTextColor(34, 34, 34);
 
+  // ---------- ITEMS ROWS ----------
   for (let i = 0; i < order.items.length; i++) {
     const item = order.items[i];
     const lineTotal = item.price * item.quantity;
     const title = item.title || "Product";
     const truncated = title.length > 55 ? title.slice(0, 52) + "…" : title;
 
+    // Page break if needed
+    if (y > pageHeight - 60) {
+      pdf.addPage();
+      y = margin;
+
+      // Repeat table header on new page
+      pdf.setFillColor(255, 102, 0);
+      pdf.rect(margin, y, innerWidth, 8, "F");
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.text("ITEM", margin + 3, y + 5.5);
+      pdf.text("QTY", pageWidth - margin - 50, y + 5.5, { align: "right" });
+      pdf.text("PRICE", pageWidth - margin - 25, y + 5.5, { align: "right" });
+      pdf.text("TOTAL", pageWidth - margin - 3, y + 5.5, { align: "right" });
+      y += 8;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(34, 34, 34);
+    }
+
     if (i % 2 === 0) {
       pdf.setFillColor(250, 250, 250);
-      pdf.rect(margin, y, pageWidth - margin * 2, 8, "F");
+      pdf.rect(margin, y, innerWidth, 8, "F");
     }
 
     pdf.setTextColor(34, 34, 34);
@@ -186,11 +223,6 @@ export async function generateInvoice(
     pdf.setFont("helvetica", "normal");
 
     y += 8;
-
-    if (y > pageHeight - 80) {
-      pdf.addPage();
-      y = margin;
-    }
   }
 
   y += 4;
@@ -198,7 +230,7 @@ export async function generateInvoice(
   pdf.line(margin, y, pageWidth - margin, y);
   y += 8;
 
-  // TOTALS
+  // ---------- TOTALS ----------
   const totalsX = pageWidth - margin - 3;
   const labelsX = pageWidth - margin - 55;
 
@@ -224,7 +256,7 @@ export async function generateInvoice(
   pdf.text(formatTk(order.total), totalsX, y, { align: "right" });
   y += 10;
 
-  // PAYMENT STATUS
+  // ---------- PAYMENT STATUS ----------
   const paid = order.paidAmount ?? order.total;
   const due = Math.max(0, order.total - paid);
   const isPaid = due === 0;
@@ -238,7 +270,7 @@ export async function generateInvoice(
 
   pdf.setFillColor(...boxBg);
   pdf.setDrawColor(...boxColor);
-  pdf.rect(margin, y, pageWidth - margin * 2, 22, "FD");
+  pdf.rect(margin, y, innerWidth, 22, "FD");
 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(11);
@@ -263,7 +295,7 @@ export async function generateInvoice(
 
   y += 30;
 
-  // FOOTER
+  // ---------- FOOTER ----------
   pdf.setFont("helvetica", "italic");
   pdf.setFontSize(8);
   pdf.setTextColor(150, 150, 150);

@@ -29,6 +29,9 @@ export const DEFAULT_PRICING: PricingConfig = {
   ],
 };
 
+// ✅ Minimum price floor so nothing shows as ৳0
+const MIN_SELLING_PRICE_BDT = 20;
+
 export function cnyToCostBdt(
   priceCny: number,
   config: PricingConfig = DEFAULT_PRICING
@@ -49,8 +52,11 @@ export function findTier(
 }
 
 export function roundPrice(price: number, step: number): number {
-  if (step <= 1) return Math.round(price);
-  return Math.round(price / step) * step;
+  if (price <= 0) return 0;
+  const rounded =
+    step <= 1 ? Math.round(price) : Math.round(price / step) * step;
+  // ✅ Never return 0 for a positive price; enforce minimum floor
+  return Math.max(MIN_SELLING_PRICE_BDT, rounded);
 }
 
 export type PriceBreakdown = {

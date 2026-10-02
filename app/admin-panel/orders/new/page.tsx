@@ -15,7 +15,7 @@ import {
 import { db } from "@/lib/firebase";
 import { formatBDT } from "@/lib/adminOrders";
 import ImageSearchModal from "@/components/ImageSearchModal";
-import { LiveProduct } from "@/lib/live-search";
+import { LiveProduct } from "@/lib/liveProduct";
 
 type ManualItem = {
   title: string;
@@ -24,17 +24,19 @@ type ManualItem = {
   image: string;
 };
 
+type SavedAddress = {
+  name?: string;
+  phone?: string;
+  address?: string;
+  district?: string;
+};
+
 type FoundUser = {
   uid: string;
   name?: string;
   phone?: string;
   email?: string;
-  address?: {
-    name?: string;
-    phone?: string;
-    address?: string;
-    district?: string;
-  };
+  savedAddress?: SavedAddress;
 };
 
 const PAYMENT_METHODS = [
@@ -42,12 +44,21 @@ const PAYMENT_METHODS = [
   { id: "bank", label: "Bank Transfer" },
 ];
 
-async function generateUniqueOrderId(): Promise<string> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const id = String(Math.floor(100000 + Math.random() * 900000));
-    return id;
+// Normalize: strip +880 / 88 / spaces / dashes → 11-digit BD number
+function normalizePhone(input: string): string {
+  const digits = input.replace(/\D/g, "");
+  if (digits.startsWith("880") && digits.length === 13) {
+    return "0" + digits.slice(3);
   }
-  return String(Date.now()).slice(-6);
+  if (digits.startsWith("88") && digits.length === 13) {
+    return "0" + digits.slice(3);
+  }
+  return digits;
+}
+
+async function generateUniqueOrderId(): Promise<string> {
+  const id = String(Math.floor(100000 + Math.random() * 900000));
+  return id;
 }
 
 export default function NewAdminOrderPage() {
@@ -60,7 +71,7 @@ export default function NewAdminOrderPage() {
   const [district, setDistrict] = useState("");
   const [payment, setPayment] = useState("cod");
   const [notes, setNotes] = useState("");
-  const [shipping, setShipping] = useState(200);
+  const [shipping, setShipping] = useState(0);
   const [items, setItems] = useState<ManualItem[]>([
     { title: "", price: 0, quantity: 1, image: "" },
   ]);
@@ -103,90 +114,128 @@ export default function NewAdminOrderPage() {
     setItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  // ---- User lookup ----
-  const lookupUser = async (term: string, byField: "phone" | "email" | "name") => {
-    const trimmed = term.trim();
-    if (!trimmed || trimmed.length < 3) return;
-    if (lastQuery.current === `${byField}:${trimmed}`) return;
-    lastQuery.current = `${byField}:${trimmed}`;
+  // ✅ Lookup user — tries top-level phone first, then savedAddress.phone
+  const lookupUser = async (rawPhone: string) => {
+    const trimmed = rawPhone.trim();
+    if (!trimmed) return;
+
+    const normalized = normalizePhone(trimmed);
+    if (normalized.length < 11) return;
+
+    const queryKey = `phone:${normalized}`;
+    if (lastQuery.current === queryKey) return;
+    lastQuery.current = queryKey;
 
     setLookingUp(true);
     setLookupError(null);
-    setFoundUser(null);
 
     try {
-      const q = query(
+      let found: { uid: string; data: any } | null = null;
+
+      // Try 1: top-level phone
+      const q1 = query(
         collection(db, "users"),
-        where(byField, "==", trimmed),
+        where("phone", "==", normalized),
         limit(1)
       );
-      const snap = await getDocs(q);
+      const snap1 = await getDocs(q1);
+      if (!snap1.empty) {
+        found = { uid: snap1.docs[0].id, data: snap1.docs[0].data() };
+      }
 
-      if (snap.empty) {
-        setLookupError("No user found with that " + byField);
+      // Try 2: savedAddress.phone
+      if (!found) {
+        const q2 = query(
+          collection(db, "users"),
+          where("savedAddress.phone", "==", normalized),
+          limit(1)
+        );
+        const snap2 = await getDocs(q2);
+        if (!snap2.empty) {
+          found = { uid: snap2.docs[0].id, data: snap2.docs[0].data() };
+        }
+      }
+
+      // Try 3: raw phone (in case number stored with +880 prefix)
+      if (!found) {
+        const q3 = query(
+          collection(db, "users"),
+          where("phone", "==", trimmed),
+          limit(1)
+        );
+        const snap3 = await getDocs(q3);
+        if (!snap3.empty) {
+          found = { uid: snap3.docs[0].id, data: snap3.docs[0].data() };
+        }
+      }
+
+      if (!found) {
+        setFoundUser(null);
+        setLookupError("এই ফোন নম্বর দিয়ে কোনো ইউজার পাওয়া যায়নি");
         return;
       }
 
-      const docSnap = snap.docs[0];
-      const data = docSnap.data() as any;
+      const data = found.data;
+      const savedAddress: SavedAddress = data.savedAddress ?? {};
 
       const user: FoundUser = {
-        uid: docSnap.id,
-        name: data.name ?? "",
+        uid: found.uid,
+        name: data.name ?? savedAddress.name ?? "",
         phone: data.phone ?? "",
         email: data.email ?? "",
-        address: data.address ?? undefined,
+        savedAddress,
       };
 
       setFoundUser(user);
+      setLookupError(null);
 
-      if (user.name && !name.trim()) setName(user.name);
-      if (user.phone && !phone.trim()) setPhone(user.phone);
-      if (user.email && !email.trim()) setEmail(user.email);
-      if (user.address) {
-        if (!address.trim() && user.address.address) {
-          setAddress(user.address.address);
-        }
-        if (!district.trim() && user.address.district) {
-          setDistrict(user.address.district);
-        }
-        if (!name.trim() && user.address.name) setName(user.address.name);
-        if (!phone.trim() && user.address.phone) setPhone(user.address.phone);
+      // ✅ Auto-fill ONLY empty fields
+      if (!name.trim() && user.name) setName(user.name);
+      if (!phone.trim() && savedAddress.phone) setPhone(savedAddress.phone);
+      else if (!phone.trim() && user.phone) setPhone(user.phone);
+
+      // Skip fake @chinadailybazar.app emails
+      if (
+        !email.trim() &&
+        user.email &&
+        !user.email.endsWith("@chinadailybazar.app")
+      ) {
+        setEmail(user.email);
+      }
+
+      if (!address.trim() && savedAddress.address) {
+        setAddress(savedAddress.address);
+      }
+      if (!district.trim() && savedAddress.district) {
+        setDistrict(savedAddress.district);
       }
     } catch (err: any) {
       console.error("User lookup failed:", err);
-      setLookupError("Lookup failed");
+      setLookupError("লুকআপ ব্যর্থ হয়েছে");
     } finally {
       setLookingUp(false);
     }
   };
 
+  // Auto-lookup on phone input
   useEffect(() => {
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
 
-    const term = phone.trim() || email.trim() || name.trim();
-    const byField: "phone" | "email" | "name" = phone.trim()
-      ? "phone"
-      : email.trim()
-      ? "email"
-      : "name";
+    const trimmed = phone.trim();
+    if (!trimmed) return;
 
-    const shouldLookup =
-      (byField === "phone" && phone.trim().replace(/\D/g, "").length >= 10) ||
-      (byField === "email" && email.includes("@") && email.includes(".")) ||
-      (byField === "name" && name.trim().length >= 3);
-
-    if (!shouldLookup) return;
+    const normalized = normalizePhone(trimmed);
+    if (normalized.length < 11) return;
 
     lookupTimer.current = setTimeout(() => {
-      lookupUser(term, byField);
+      lookupUser(trimmed);
     }, 600);
 
     return () => {
       if (lookupTimer.current) clearTimeout(lookupTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phone, email, name]);
+  }, [phone]);
 
   const clearUser = () => {
     setFoundUser(null);
@@ -259,7 +308,9 @@ export default function NewAdminOrderPage() {
           }
           setImageSearchLoading(false);
           if (incoming.length === 0) {
-            setImageSearchError("No matches found. Try a clearer photo.");
+            setImageSearchError(
+              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
+            );
           }
         } else if (data.status === "error") {
           if (imageSearchPollRef.current) {
@@ -267,7 +318,10 @@ export default function NewAdminOrderPage() {
             imageSearchPollRef.current = null;
           }
           setImageSearchLoading(false);
-          setImageSearchError(data.error || "Search failed");
+          setImageSearchError(
+            data.error ||
+              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
+          );
         }
       } catch (err) {
         console.warn("Poll error:", err);
@@ -418,7 +472,7 @@ export default function NewAdminOrderPage() {
               label="Phone Number *"
               value={phone}
               onChange={setPhone}
-              placeholder="01XXXXXXXXX"
+              placeholder="01XXXXXXXXX or +8801XXXXXXXXX"
             />
 
             {lookingUp && (
@@ -431,7 +485,10 @@ export default function NewAdminOrderPage() {
                   <span className="font-semibold text-success">✓ Found: </span>
                   <span className="text-text-primary">
                     {foundUser.name || "—"}
-                    {foundUser.email ? ` (${foundUser.email})` : ""}
+                    {foundUser.email &&
+                    !foundUser.email.endsWith("@chinadailybazar.app")
+                      ? ` (${foundUser.email})`
+                      : ""}
                   </span>
                 </div>
                 <button

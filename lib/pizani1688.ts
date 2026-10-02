@@ -227,6 +227,46 @@ async function callPizani(
 }
 
 // =============================================
+// Price resolution — 3-tier fallback
+// =============================================
+
+function resolvePriceCny(p: RawProductInfo, offerId: string): number {
+  // Tier 1: priceCNY field (normal case)
+  let minCny = Number(p.priceCNY) || 0;
+  if (minCny > 0) return minCny;
+
+  // Tier 2: price field (usually USD string like "8.86")
+  if (p.price) {
+    const usd = Number(String(p.price).replace(/[^\d.]/g, ""));
+    if (usd > 0) {
+      // invert cnyToUsd (0.14)
+      minCny = usd / DEFAULT_PRICING.cnyToUsd;
+      console.warn(
+        `[pizani] ${offerId} priceCNY was 0 — derived ${minCny.toFixed(2)} CNY from price=${p.price} USD`
+      );
+      return minCny;
+    }
+  }
+
+  // Tier 3: cheapest option variant
+  const optionPrices = (p.options ?? [])
+    .map((o) => Number(o.priceCNY) || Number(o.price) || 0)
+    .filter((n) => n > 0);
+  if (optionPrices.length > 0) {
+    minCny = Math.min(...optionPrices);
+    console.warn(
+      `[pizani] ${offerId} priceCNY was 0 — using cheapest option ${minCny} CNY`
+    );
+    return minCny;
+  }
+
+  console.warn(
+    `[pizani] ${offerId} no valid price (priceCNY=${p.priceCNY}, price=${p.price}, options=${p.options?.length ?? 0})`
+  );
+  return 0;
+}
+
+// =============================================
 // Main fetch
 // =============================================
 
@@ -254,11 +294,13 @@ export async function fetchPizani1688(
 
   const p = first.productInfo;
 
-  const minCny = Number(p.priceCNY) || 0;
-  if (minCny <= 0) {
-    console.warn(`[pizani] ${offerId} no valid price`);
-    return null;
-  }
+  // ✅ Debug log — see exactly what Pizani gave us
+  console.log(
+    `[pizani DEBUG] ${offerId} priceCNY=${JSON.stringify(p.priceCNY)} price=${JSON.stringify(p.price)} minOrder=${p.minOrderQuantity} options=${p.options?.length ?? 0}`
+  );
+
+  const minCny = resolvePriceCny(p, offerId);
+  if (minCny <= 0) return null;
 
   const priceMin = computePrice(minCny, DEFAULT_PRICING).sellingBdt;
   const oldPrice = Math.round(priceMin * 1.3);
@@ -347,7 +389,7 @@ export async function fetchPizani1688(
   };
 
   console.log(
-    `[pizani] ✓ ${offerId}: ${result.colors.length} colors, ${result.sizes.length} sizes, ${specs.length} specs, ${gallery.length} images — total ${Date.now() - t0}ms`
+    `[pizani] ✓ ${offerId}: ${result.colors.length} colors, ${result.sizes.length} sizes, ${specs.length} specs, ${gallery.length} images, price ৳${priceMin} — total ${Date.now() - t0}ms`
   );
 
   return result;

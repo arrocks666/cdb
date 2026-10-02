@@ -18,10 +18,6 @@ import { computePrice, DEFAULT_PRICING } from "./pricing";
 const PARSE_BOT_API_KEY = process.env.PARSE_BOT_API_KEY;
 const PARSE_BOT_SCRAPER_ID = process.env.PARSE_BOT_SCRAPER_ID;
 
-if (!PARSE_BOT_API_KEY)
-  throw new Error("Missing PARSE_BOT_API_KEY in .env.local");
-if (!PARSE_BOT_SCRAPER_ID)
-  throw new Error("Missing PARSE_BOT_SCRAPER_ID in .env.local");
 
 const BASE_URL = `https://api.parse.bot/scraper/${PARSE_BOT_SCRAPER_ID}`;
 

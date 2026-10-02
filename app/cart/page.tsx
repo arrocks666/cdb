@@ -1,22 +1,31 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatBDT } from "@/lib/data";
 import { useProducts } from "@/lib/ProductsContext";
 import { useCart } from "@/lib/CartContext";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
 export default function CartPage() {
   const router = useRouter();
   const cart = useCart();
   const { products } = useProducts();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
 
   const cartRows = useMemo(() => {
     return cart.items
       .map((item) => {
-        // If it's a live item, use the snapshot
         if (item.isLive && item.liveSnapshot) {
           return {
             key: `${item.productId}-${item.colorId}`,
@@ -25,14 +34,13 @@ export default function CartPage() {
             image: item.liveSnapshot.image,
             price: item.liveSnapshot.price,
             colorId: item.colorId,
-            size: item.size, // ✅ FIXED: pass size through
+            size: item.size,
             quantity: item.quantity,
             lineTotal: item.liveSnapshot.price * item.quantity,
             href: `/live-product/${item.productId}`,
             isLive: true,
           };
         }
-        // Otherwise look up product from Firestore-backed list
         const product = products.find((p) => p.id === item.productId);
         if (!product) return null;
         return {
@@ -42,7 +50,7 @@ export default function CartPage() {
           image: product.image,
           price: product.price,
           colorId: item.colorId,
-          size: item.size, // ✅ FIXED: pass size through
+          size: item.size,
           quantity: item.quantity,
           lineTotal: product.price * item.quantity,
           href: `/product/${product.id}`,
@@ -56,7 +64,7 @@ export default function CartPage() {
       image: string;
       price: number;
       colorId: string;
-      size?: string; // ✅ FIXED: added to type
+      size?: string;
       quantity: number;
       lineTotal: number;
       href: string;
@@ -78,7 +86,10 @@ export default function CartPage() {
 
   const selectedRows = cartRows.filter((r) => isSelected(r.key));
   const subtotal = selectedRows.reduce((sum, r) => sum + r.lineTotal, 0);
-  const shipping = selectedRows.length > 0 ? 200 : 0;
+
+  // ✅ Read shipping from settings
+  const shipping =
+    selectedRows.length > 0 ? settings.shippingCharge ?? 0 : 0;
   const total = subtotal + shipping;
 
   const handleCheckout = () => {
@@ -153,14 +164,11 @@ export default function CartPage() {
 
               <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
                 <div className="inline-flex items-center rounded border border-border-subtle bg-white">
-                  {/* ✅ FIXED: pass row.size as 3rd arg */}
                   <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity - 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">−</button>
                   <span className="w-8 text-center text-sm font-semibold tabular-nums text-text-primary">{row.quantity}</span>
-                  {/* ✅ FIXED: pass row.size as 3rd arg */}
                   <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity + 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">+</button>
                 </div>
 
-                {/* ✅ FIXED: pass row.size as 3rd arg */}
                 <button aria-label="Remove" onClick={() => cart.remove(row.productId, row.colorId, row.size)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-red-primary">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6" />
@@ -176,8 +184,16 @@ export default function CartPage() {
       <div className="fixed bottom-[60px] left-0 right-0 z-40 border-t border-border-subtle bg-white shadow-nav md:bottom-0">
         <div className="mx-auto max-w-[1800px] px-4 py-3">
           <div className="space-y-1 text-xs md:text-sm">
-            <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(subtotal)}</span></div>
-            <div className="flex justify-between text-text-secondary"><span>Shipping</span><span className="text-text-primary">{formatBDT(shipping)}</span></div>
+            <div className="flex justify-between text-text-secondary">
+              <span>Subtotal</span>
+              <span className="text-text-primary">{formatBDT(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-text-secondary">
+              <span>Shipping</span>
+              <span className={shipping === 0 ? "font-semibold text-success" : "text-text-primary"}>
+                {shipping === 0 ? "Free" : formatBDT(shipping)}
+              </span>
+            </div>
             <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
               <span className="text-sm font-semibold text-text-primary md:text-base">Total</span>
               <span className="text-lg font-bold text-red-primary md:text-xl">{formatBDT(total)}</span>

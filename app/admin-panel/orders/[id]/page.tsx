@@ -43,6 +43,10 @@ export default function AdminOrderDetailPage({
   const [chinaOrderId, setChinaOrderId] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
 
+  // ✅ Shipping override
+  const [shippingOverride, setShippingOverride] = useState<string>("");
+  const [savingShipping, setSavingShipping] = useState(false);
+
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [addingPayment, setAddingPayment] = useState(false);
@@ -82,6 +86,7 @@ export default function AdminOrderDetailPage({
         setStatus(data.status);
         setChinaOrderId(data.chinaOrderId ?? "");
         setAdminNotes(data.adminNotes ?? "");
+        setShippingOverride(String(data.shipping ?? 0));
 
         const c = data.charges ?? {};
         setChinaLocalCourier(
@@ -164,6 +169,40 @@ export default function AdminOrderDetailPage({
       showToast("Failed to save notes");
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  // ✅ Save shipping override and recalculate total / due
+  const handleSaveShipping = async () => {
+    if (!order) return;
+    const newShipping = Number(shippingOverride) || 0;
+    const newTotal = order.subtotal + newShipping;
+    const paidAmount = order.paidAmount ?? 0;
+    const newDueAmount = Math.max(0, newTotal - paidAmount);
+
+    setSavingShipping(true);
+    try {
+      await updateDoc(doc(db, "orders", id), {
+        shipping: newShipping,
+        total: newTotal,
+        paidAmount,
+        dueAmount: newDueAmount,
+        updatedAt: serverTimestamp(),
+      });
+
+      setOrder({
+        ...order,
+        shipping: newShipping,
+        total: newTotal,
+        paidAmount,
+        dueAmount: newDueAmount,
+      });
+      showToast("Shipping updated");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to update shipping");
+    } finally {
+      setSavingShipping(false);
     }
   };
 
@@ -361,9 +400,6 @@ export default function AdminOrderDetailPage({
   const isFullyPaid = orderDue === 0;
   const payments = order.payments ?? [];
 
-  const arrivedIdx = STATUS_ORDER.indexOf("arrived");
-  const showChargesSection = currentStatusIdx >= arrivedIdx;
-
   return (
     <div>
       {toast && (
@@ -445,6 +481,36 @@ export default function AdminOrderDetailPage({
           </p>
         </div>
       </div>
+
+      {/* ✅ SHIPPING CHARGE OVERRIDE */}
+      <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+        <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
+          Shipping Charge
+        </h2>
+        <p className="mb-3 text-xs text-text-muted">
+          Editable. Changing this recalculates the order total and due amount.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            value={shippingOverride}
+            onChange={(e) => setShippingOverride(e.target.value)}
+            placeholder="0"
+            className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+          />
+          <button
+            onClick={handleSaveShipping}
+            disabled={
+              savingShipping ||
+              Number(shippingOverride) === order.shipping
+            }
+            className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+          >
+            {savingShipping ? "Saving..." : "Save Shipping"}
+          </button>
+        </div>
+      </section>
 
       {/* PAYMENT */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
@@ -583,150 +649,151 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {showChargesSection && (
-        <section className="mt-5 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-5 shadow-card-dark">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
-                Shipping Charges
-              </h2>
-              <p className="mt-0.5 text-xs text-text-muted">
-                Enter charges after the parcel arrives. Toggle "Show" to display each to the customer.
-              </p>
+      {/* ✅ CHARGES — ALWAYS VISIBLE NOW */}
+      <section className="mt-5 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-5 shadow-card-dark">
+        <div className="mb-4">
+          <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
+            Shipping Charges
+          </h2>
+          <p className="mt-0.5 text-xs text-text-muted">
+            Enter charges and toggle "Show to user" to display each to the customer.
+            If toggle is OFF, the customer sees the label but a blank value.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {/* China Local Courier */}
+          <div className="rounded-lg border border-border-subtle bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                China Local Courier (৳)
+              </label>
+              <label className="flex items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={showChinaLocalCourier}
+                  onChange={(e) => setShowChinaLocalCourier(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-text-secondary">Show to user</span>
+              </label>
+            </div>
+            <input
+              type="number"
+              value={chinaLocalCourier}
+              onChange={(e) => setChinaLocalCourier(e.target.value)}
+              placeholder="0"
+              className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+            />
+          </div>
+
+          {/* BD Courier */}
+          <div className="rounded-lg border border-border-subtle bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                BD Courier Charge (৳)
+              </label>
+              <label className="flex items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={showBdCourier}
+                  onChange={(e) => setShowBdCourier(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-text-secondary">Show to user</span>
+              </label>
+            </div>
+            <input
+              type="number"
+              value={bdCourier}
+              onChange={(e) => setBdCourier(e.target.value)}
+              placeholder="0"
+              className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+            />
+          </div>
+
+          {/* Shipping Charge (weight-based) */}
+          <div className="rounded-lg border border-border-subtle bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                Shipping Charge (China → BD)
+              </label>
+              <label className="flex items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={showShippingCharge}
+                  onChange={(e) => setShowShippingCharge(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-text-secondary">Show to user</span>
+              </label>
+            </div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Weight (kg)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={shippingWeightKg}
+                  onChange={(e) => setShippingWeightKg(e.target.value)}
+                  placeholder="0"
+                  className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Rate (৳/kg)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={shippingRatePerKg}
+                  onChange={(e) => setShippingRatePerKg(e.target.value)}
+                  placeholder="0"
+                  className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-2 flex items-center justify-between rounded bg-bg-orange px-3 py-2">
+              <span className="text-[11px] font-medium text-text-secondary">
+                Calculated shipping charge:
+              </span>
+              <span className="text-sm font-bold text-red-primary">
+                {formatBDT(computedShippingCharge)}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border-subtle bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                  China Local Courier (৳)
-                </label>
-                <label className="flex items-center gap-2 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={showChinaLocalCourier}
-                    onChange={(e) => setShowChinaLocalCourier(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-text-secondary">Show to user</span>
-                </label>
-              </div>
-              <input
-                type="number"
-                value={chinaLocalCourier}
-                onChange={(e) => setChinaLocalCourier(e.target.value)}
-                placeholder="0"
-                className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
-              />
-            </div>
-
-            <div className="rounded-lg border border-border-subtle bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                  BD Courier Charge (৳)
-                </label>
-                <label className="flex items-center gap-2 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={showBdCourier}
-                    onChange={(e) => setShowBdCourier(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-text-secondary">Show to user</span>
-                </label>
-              </div>
-              <input
-                type="number"
-                value={bdCourier}
-                onChange={(e) => setBdCourier(e.target.value)}
-                placeholder="0"
-                className="mt-2 w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
-              />
-            </div>
-
-            <div className="rounded-lg border border-border-subtle bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                  Shipping Charge
-                </label>
-                <label className="flex items-center gap-2 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={showShippingCharge}
-                    onChange={(e) => setShowShippingCharge(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-text-secondary">Show to user</span>
-                </label>
-              </div>
-
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Weight (kg)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={shippingWeightKg}
-                    onChange={(e) => setShippingWeightKg(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                    Rate (৳/kg)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={shippingRatePerKg}
-                    onChange={(e) => setShippingRatePerKg(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded border border-border-subtle bg-bg-input px-3 py-2 text-sm focus:border-gold-primary focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-2 flex items-center justify-between rounded bg-bg-orange px-3 py-2">
-                <span className="text-[11px] font-medium text-text-secondary">
-                  Calculated shipping charge:
-                </span>
-                <span className="text-sm font-bold text-red-primary">
-                  {formatBDT(computedShippingCharge)}
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border-2 border-gold-primary/40 bg-white p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                  Total Extra Charges
-                </span>
-                <span className="text-lg font-bold text-red-primary">
-                  {formatBDT(
-                    (Number(chinaLocalCourier) || 0) +
-                      (Number(bdCourier) || 0) +
-                      computedShippingCharge
-                  )}
-                </span>
-              </div>
+          <div className="rounded-lg border-2 border-gold-primary/40 bg-white p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                Total Extra Charges
+              </span>
+              <span className="text-lg font-bold text-red-primary">
+                {formatBDT(
+                  (Number(chinaLocalCourier) || 0) +
+                    (Number(bdCourier) || 0) +
+                    computedShippingCharge
+                )}
+              </span>
             </div>
           </div>
+        </div>
 
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={handleSaveCharges}
-              disabled={savingCharges}
-              className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
-            >
-              {savingCharges ? "Saving..." : "Save Charges"}
-            </button>
-          </div>
-        </section>
-      )}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={handleSaveCharges}
+            disabled={savingCharges}
+            className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+          >
+            {savingCharges ? "Saving..." : "Save Charges"}
+          </button>
+        </div>
+      </section>
 
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">

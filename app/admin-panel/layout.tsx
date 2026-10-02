@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  type StoreSettings,
+} from "@/lib/firestoreSettings";
 
 type NavItem = {
   href: string;
@@ -28,8 +33,15 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
 
   const isLoginPage = pathname === "/admin-panel/login";
+
+  // ✅ Load settings for logo (reload whenever pathname changes so logo updates after admin saves)
+  useEffect(() => {
+    if (isLoginPage) return;
+    loadSettings().then(setSettings).catch(() => {});
+  }, [pathname, isLoginPage]);
 
   const handleLogout = async () => {
     if (!confirm("Logout from admin panel?")) return;
@@ -41,6 +53,8 @@ export default function AdminLayout({
   if (isLoginPage) {
     return <>{children}</>;
   }
+
+  const logoUrl = settings.logoUrl;
 
   return (
     <div className="min-h-screen bg-bg-secondary flex">
@@ -58,9 +72,18 @@ export default function AdminLayout({
       >
         <div className="flex h-full flex-col border-r border-border-subtle">
           <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-primary text-lg font-bold text-white shadow-orange-glow">
-              买
-            </div>
+            {/* ✅ Logo — uses uploaded logo, fallback to 买 */}
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="logo"
+                className="h-9 w-9 flex-shrink-0 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gold-primary text-lg font-bold text-white shadow-orange-glow">
+                买
+              </div>
+            )}
             <div className="leading-tight">
               <div className="text-sm font-bold">
                 <span className="text-text-primary">ChinaDaily</span>
@@ -128,6 +151,18 @@ export default function AdminLayout({
               <line x1="3" y1="17" x2="21" y2="17" />
             </svg>
           </button>
+          {/* ✅ Mobile header logo */}
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="logo"
+              className="h-7 w-7 flex-shrink-0 rounded object-contain"
+            />
+          ) : (
+            <div className="flex h-7 w-7 items-center justify-center rounded bg-gold-primary text-xs font-bold text-white">
+              买
+            </div>
+          )}
           <div className="text-sm font-bold">
             <span className="text-text-primary">Admin</span>
             <span className="text-gold-primary"> Panel</span>
