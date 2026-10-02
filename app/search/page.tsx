@@ -14,6 +14,11 @@ const SKELETON_SLOTS = 3;
 const MAX_404_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
 
+// ✅ sessionStorage key for a given job
+function cacheKey(jobId: string): string {
+  return `img_search_cache_${jobId}`;
+}
+
 function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,7 +38,6 @@ function SearchContent() {
   const [jobError, setJobError] = useState<string | null>(null);
   const [needsCategoryPick, setNeedsCategoryPick] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // ✅ Track 404 retries — job may be on a different serverless instance
   const notFoundCountRef = useRef(0);
 
   useEffect(() => {
@@ -44,6 +48,26 @@ function SearchContent() {
   useEffect(() => {
     if (!isImageSearch || !jobId) return;
 
+    // ✅ STEP 1: Try sessionStorage cache FIRST — instant load
+    try {
+      const cached = sessionStorage.getItem(cacheKey(jobId));
+      if (cached) {
+        const parsed = JSON.parse(cached) as LiveProduct[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(
+            `[search] sessionStorage HIT — ${parsed.length} products for job ${jobId}`
+          );
+          setImageResults(parsed);
+          setTotalExpected(parsed.length);
+          setJobStatus("done");
+          return; // No need to poll
+        }
+      }
+    } catch (err) {
+      console.warn("[search] cache read failed:", err);
+    }
+
+    // STEP 2: No cache — poll the server job
     setJobStatus("searching");
     setJobError(null);
     setImageResults([]);
@@ -65,13 +89,11 @@ function SearchContent() {
       try {
         const res = await fetch(`/api/image-search/status?jobId=${jobId}`);
 
-        // ✅ 404 — job may be on a different serverless instance.
-        // Retry a few times before giving up.
         if (res.status === 404) {
           notFoundCountRef.current += 1;
           if (notFoundCountRef.current <= MAX_404_RETRIES) {
             console.log(
-              `[search] job not found yet (${notFoundCountRef.current}/${MAX_404_RETRIES}), retrying...`
+              `[search] job not found (${notFoundCountRef.current}/${MAX_404_RETRIES}), retrying...`
             );
             return;
           }
@@ -83,15 +105,24 @@ function SearchContent() {
           return;
         }
 
-        // Reset retry counter if we got any successful response
         notFoundCountRef.current = 0;
-
         if (!res.ok) return;
 
         const data = await res.json();
         const incoming: LiveProduct[] = data.products ?? [];
 
-        if (incoming.length > 0) setImageResults(incoming);
+        if (incoming.length > 0) {
+          setImageResults(incoming);
+          // ✅ Save to sessionStorage for back-navigation
+          try {
+            sessionStorage.setItem(
+              cacheKey(jobId),
+              JSON.stringify(incoming)
+            );
+          } catch (cacheErr) {
+            console.warn("[search] cache write failed:", cacheErr);
+          }
+        }
         if (data.totalExpected && data.totalExpected > 0) {
           setTotalExpected(data.totalExpected);
         }
@@ -155,6 +186,11 @@ function SearchContent() {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+    if (jobId) {
+      try {
+        sessionStorage.removeItem(cacheKey(jobId));
+      } catch {}
     }
     router.replace("/search", { scroll: false });
   };
