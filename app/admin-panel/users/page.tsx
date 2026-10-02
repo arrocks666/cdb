@@ -63,7 +63,14 @@ export default function AdminUsersPage() {
     if (!q) return true;
     const phone = (u.phone ?? "").toLowerCase();
     const name = (u.name ?? "").toLowerCase();
-    return phone.includes(q) || name.includes(q);
+    const email = (u.email ?? "").toLowerCase();
+    const address = (u.savedAddress?.address ?? "").toLowerCase();
+    return (
+      phone.includes(q) ||
+      name.includes(q) ||
+      email.includes(q) ||
+      address.includes(q)
+    );
   });
 
   return (
@@ -92,7 +99,7 @@ export default function AdminUsersPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by phone or name..."
+          placeholder="Search by name, phone, email, or address..."
           className="w-full rounded-lg border border-border-subtle bg-white px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none md:max-w-md"
         />
       </div>
@@ -121,6 +128,8 @@ export default function AdminUsersPage() {
           filtered.map((u) => {
             const valid = filterValidCoupons(u.coupons ?? []);
             const isOpen = openGiveFor === u.uid;
+            const displayName = u.name || "Unnamed User";
+            const hasAddress = u.savedAddress?.address;
 
             return (
               <div
@@ -133,12 +142,27 @@ export default function AdminUsersPage() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-text-primary md:text-base">
-                      {u.name || u.phone || "Unknown User"}
+                    {/* ✅ Name first, then phone, then uid */}
+                    <p className="text-sm font-bold text-text-primary md:text-base">
+                      {displayName}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">
-                      {u.phone && u.name ? u.phone : u.uid.slice(0, 12)}
+                    <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                      {u.phone || "No phone"}
                     </p>
+                    <p className="mt-0.5 truncate font-mono text-[10px] text-text-muted md:text-[11px]">
+                      {u.uid}
+                    </p>
+
+                    {/* Address snippet if saved */}
+                    {hasAddress && (
+                      <p className="mt-1 truncate text-[11px] text-text-muted md:text-xs">
+                        📍 {u.savedAddress?.address}
+                        {u.savedAddress?.district
+                          ? `, ${u.savedAddress.district}`
+                          : ""}
+                      </p>
+                    )}
+
                     {valid.length > 0 && (
                       <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-bg-orange px-2 py-0.5 text-[10px] font-bold text-gold-primary">
                         🎟️ {valid.length} active coupon{valid.length > 1 ? "s" : ""}

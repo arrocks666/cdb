@@ -9,6 +9,7 @@ import { useCart } from "@/lib/CartContext";
 import { useWhatsApp } from "@/lib/WhatsAppContext";
 import { useLiveProducts } from "@/lib/LiveProductContext";
 import { LiveProduct } from "@/lib/liveProduct";
+import { getLiveProduct } from "@/lib/firestoreLiveProducts";
 import { hasChinese, translateLocation } from "@/lib/chinaLocations";
 import {
   loadSettings,
@@ -47,8 +48,11 @@ export default function LiveProductPage({
 
   const [product, setProduct] = useState<LiveProduct | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadingFromFirestore, setLoadingFromFirestore] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [editingQty, setEditingQty] = useState<string | null>(null);
   const [addedFeedback, setAddedFeedback] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
   const [shippingMethod, setShippingMethod] = useState<"air" | "sea">("air");
@@ -65,8 +69,22 @@ export default function LiveProductPage({
 
   useEffect(() => {
     const found = liveStore.get(id);
-    if (found) setProduct(found);
-    else setNotFound(true);
+    if (found) {
+      setProduct(found);
+      return;
+    }
+    setLoadingFromFirestore(true);
+    getLiveProduct(id)
+      .then((p) => {
+        if (p) {
+          setProduct(p);
+          liveStore.save(p);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoadingFromFirestore(false));
   }, [id, liveStore]);
 
   useEffect(() => {
@@ -102,7 +120,7 @@ export default function LiveProductPage({
     );
   }
 
-  if (!product) {
+  if (!product || loadingFromFirestore) {
     return (
       <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
@@ -213,6 +231,32 @@ export default function LiveProductPage({
     whatsapp.openWhatsApp(product.title, productUrl);
   };
 
+  const handleShare = async () => {
+    const url =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/live-product/${product.id}`
+        : "";
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({
+          title: product.title,
+          text: `${product.title} — ${formatBDT(product.price)}`,
+          url,
+        });
+      } else if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard
+      ) {
+        await navigator.clipboard.writeText(url);
+        setShareFeedback(true);
+        setTimeout(() => setShareFeedback(false), 1800);
+      }
+    } catch (err) {
+      console.warn("Share cancelled or failed:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-bg-secondary">
       <div className="sticky top-[56px] z-40 flex items-center justify-between border-b border-border-subtle bg-white px-4 py-3 shadow-sm md:top-[60px]">
@@ -224,24 +268,46 @@ export default function LiveProductPage({
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <button
-          aria-label={inWishlist ? "Remove" : "Add"}
-          onClick={handleToggleWishlist}
-          className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
-            inWishlist
-              ? "bg-red-primary text-white"
-              : "text-text-muted hover:text-red-primary"
-          }`}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
-        </button>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleShare}
+            aria-label="Share"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-text-muted transition hover:text-gold-primary"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+          </button>
+
+          <button
+            aria-label={inWishlist ? "Remove" : "Add"}
+            onClick={handleToggleWishlist}
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+              inWishlist
+                ? "bg-red-primary text-white"
+                : "text-text-muted hover:text-red-primary"
+            }`}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill={inWishlist ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {shareFeedback && (
+        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-text-primary px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+          ✓ Link copied to clipboard
+        </div>
+      )}
 
       <div className="mx-auto max-w-7xl px-3 py-3 md:px-4 md:py-6">
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-8">
-          {/* IMAGES */}
           <div>
             <div className="relative aspect-square overflow-hidden rounded-lg border border-border-subtle bg-white shadow-sm">
               <div className="flex h-full items-center justify-center p-4">
@@ -262,6 +328,9 @@ export default function LiveProductPage({
                   -{product.discount}%
                 </div>
               )}
+              <div className="absolute right-3 top-3 rounded bg-black/60 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">
+                🔥 LIVE
+              </div>
             </div>
             {gallery.length > 1 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
@@ -297,7 +366,6 @@ export default function LiveProductPage({
             )}
           </div>
 
-          {/* DETAILS */}
           <div>
             <h1 className="text-xl font-bold leading-tight text-text-primary md:text-3xl">
               {product.title}
@@ -353,7 +421,6 @@ export default function LiveProductPage({
               </div>
             </div>
 
-            {/* COLOR SELECTOR */}
             {colors.length > 0 && (
               <div className="mt-5">
                 <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
@@ -428,7 +495,6 @@ export default function LiveProductPage({
               </div>
             )}
 
-            {/* SIZE SELECTOR */}
             {sizes.length > 0 && (
               <div className="mt-5">
                 <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
@@ -461,7 +527,6 @@ export default function LiveProductPage({
               </div>
             )}
 
-            {/* SHIPPING */}
             <div className="mt-5">
               <p className="mb-2 text-xs font-bold text-text-primary md:text-sm">
                 Shipping Method
@@ -527,9 +592,28 @@ export default function LiveProductPage({
                 >
                   −
                 </button>
-                <span className="w-10 text-center text-sm font-semibold tabular-nums text-text-primary">
-                  {quantity}
-                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={editingQty ?? String(quantity)}
+                  onChange={(e) => setEditingQty(e.target.value)}
+                  onBlur={() => {
+                    if (editingQty !== null) {
+                      const parsed = parseInt(editingQty, 10);
+                      setQuantity(!parsed || parsed < 1 ? 1 : parsed);
+                      setEditingQty(null);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  onFocus={(e) => {
+                    setEditingQty(String(quantity));
+                    e.target.select();
+                  }}
+                  className="w-12 border-0 bg-transparent text-center text-sm font-semibold tabular-nums text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => q + 1)}
@@ -540,7 +624,6 @@ export default function LiveProductPage({
               </div>
             </div>
 
-            {/* PRICE BREAKDOWN */}
             <div className="mt-4 space-y-2 border-t border-border-subtle pt-4 text-sm">
               <div className="flex justify-between text-text-secondary">
                 <span>Product price</span>
@@ -576,7 +659,6 @@ export default function LiveProductPage({
               </div>
             </div>
 
-            {/* WEIGHT BOX */}
             <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
@@ -633,7 +715,6 @@ export default function LiveProductPage({
               Order via WhatsApp
             </button>
 
-            {/* SPECS */}
             {product.specs && product.specs.length > 0 && (
               <div className="mt-6 rounded-lg border border-border-subtle bg-white p-4">
                 <h2 className="mb-3 text-sm font-bold text-text-primary md:text-base">
@@ -680,7 +761,6 @@ export default function LiveProductPage({
         </div>
       </div>
 
-      {/* ⭐ INLINE COLOR MODAL */}
       {showColorModal && (
         <div
           className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4"

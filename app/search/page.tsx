@@ -8,9 +8,11 @@ import ProductCard from "@/components/ProductCard";
 import LiveProductCard from "@/components/LiveProductCard";
 import ProductSkeleton from "@/components/ProductSkeleton";
 import { categories } from "@/lib/categories";
-import { LiveProduct } from "@/lib/live-search";
+import { LiveProduct } from "@/lib/liveProduct";
 
 const SKELETON_SLOTS = 3;
+const MAX_404_RETRIES = 3;
+const RETRY_DELAY_MS = 3000;
 
 function SearchContent() {
   const router = useRouter();
@@ -31,6 +33,8 @@ function SearchContent() {
   const [jobError, setJobError] = useState<string | null>(null);
   const [needsCategoryPick, setNeedsCategoryPick] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ✅ Track 404 retries — job may be on a different serverless instance
+  const notFoundCountRef = useRef(0);
 
   useEffect(() => {
     setQuery(urlQuery);
@@ -44,6 +48,7 @@ function SearchContent() {
     setJobError(null);
     setImageResults([]);
     setTotalExpected(SKELETON_SLOTS);
+    notFoundCountRef.current = 0;
 
     let stopped = false;
 
@@ -60,13 +65,26 @@ function SearchContent() {
       try {
         const res = await fetch(`/api/image-search/status?jobId=${jobId}`);
 
-        // 404 = server restarted, job gone. Stop polling.
+        // ✅ 404 — job may be on a different serverless instance.
+        // Retry a few times before giving up.
         if (res.status === 404) {
+          notFoundCountRef.current += 1;
+          if (notFoundCountRef.current <= MAX_404_RETRIES) {
+            console.log(
+              `[search] job not found yet (${notFoundCountRef.current}/${MAX_404_RETRIES}), retrying...`
+            );
+            return;
+          }
           stopPolling();
           setJobStatus("error");
-          setJobError("Search session expired. Please search again.");
+          setJobError(
+            "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
+          );
           return;
         }
+
+        // Reset retry counter if we got any successful response
+        notFoundCountRef.current = 0;
 
         if (!res.ok) return;
 
@@ -104,7 +122,7 @@ function SearchContent() {
     };
 
     poll();
-    pollRef.current = setInterval(poll, 2000);
+    pollRef.current = setInterval(poll, RETRY_DELAY_MS);
 
     return () => {
       stopped = true;
@@ -266,7 +284,7 @@ function SearchContent() {
             {jobError && !isSearching && (
               <div className="mt-16 flex flex-col items-center text-center">
                 <div className="text-6xl opacity-40">📷</div>
-                <h3 className="mt-4 text-sm font-bold text-text-primary md:text-base">
+                <h3 className="mt-4 max-w-md text-sm font-bold text-text-primary md:text-base">
                   {jobError}
                 </h3>
                 <button

@@ -49,6 +49,7 @@ export default function ProductPage({
   const inWishlist = product ? wishlist.has(product.id) : false;
 
   const [quantity, setQuantity] = useState(1);
+  const [editingQty, setEditingQty] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState(0);
   const [addedFeedback, setAddedFeedback] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
@@ -460,6 +461,7 @@ export default function ProductPage({
               </div>
             </div>
 
+            {/* QUANTITY */}
             <div className="mt-4 flex items-center justify-between">
               <span className="text-xs font-bold text-text-primary md:text-sm">
                 Quantity
@@ -471,9 +473,28 @@ export default function ProductPage({
                 >
                   −
                 </button>
-                <span className="w-10 text-center text-sm font-semibold tabular-nums text-text-primary">
-                  {quantity}
-                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={editingQty ?? String(quantity)}
+                  onChange={(e) => setEditingQty(e.target.value)}
+                  onBlur={() => {
+                    if (editingQty !== null) {
+                      const parsed = parseInt(editingQty, 10);
+                      setQuantity(!parsed || parsed < 1 ? 1 : parsed);
+                      setEditingQty(null);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  onFocus={(e) => {
+                    setEditingQty(String(quantity));
+                    e.target.select();
+                  }}
+                  className="w-12 border-0 bg-transparent text-center text-sm font-semibold tabular-nums text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
                 <button
                   onClick={() => setQuantity((q) => q + 1)}
                   className="flex h-9 w-9 items-center justify-center text-text-secondary transition hover:text-gold-primary"

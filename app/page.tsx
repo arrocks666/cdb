@@ -1,16 +1,41 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import HeroBanner from "@/components/HeroBanner";
 import CategoryStrip from "@/components/CategoryStrip";
 import FlashSaleStrip from "@/components/FlashSaleStrip";
 import ProductGrid from "@/components/ProductGrid";
+import LiveProductCard from "@/components/LiveProductCard";
+import ProductSkeleton from "@/components/ProductSkeleton";
 import { useProducts } from "@/lib/ProductsContext";
+import { getRecentLiveProducts } from "@/lib/firestoreLiveProducts";
+import type { LiveProduct } from "@/lib/liveProduct";
 
 export default function HomePage() {
   const { products, loading } = useProducts();
+  const [liveProducts, setLiveProducts] = useState<LiveProduct[]>([]);
+  const [liveLoading, setLiveLoading] = useState(true);
 
-  // ONLY admin-flagged trending products. No fallback.
+  // ✅ Load recent live products from Firestore
+  useEffect(() => {
+    let cancelled = false;
+    getRecentLiveProducts(20)
+      .then((list) => {
+        if (!cancelled) setLiveProducts(list);
+      })
+      .catch((err) => {
+        console.warn("Failed to load recent live products:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const trending = products.filter((p) => p.isTrending === true);
+  const hasLiveProducts = liveProducts.length > 0;
 
   return (
     <div className="bg-bg-secondary">
@@ -18,6 +43,44 @@ export default function HomePage() {
       <CategoryStrip />
       <FlashSaleStrip />
 
+      {/* ✅ Recently Found — Live Products */}
+      {(liveLoading || hasLiveProducts) && (
+        <section className="bg-white px-4 py-4 md:py-6">
+          <div className="mx-auto max-w-[1800px]">
+            <div className="mb-3 flex items-center justify-between md:mb-5">
+              <h2 className="flex items-center gap-2 text-base font-bold text-text-primary md:text-xl">
+                <span>🔥</span>
+                <span>Recently Found</span>
+                <span className="rounded-full bg-red-primary/10 px-2 py-0.5 text-[10px] font-bold text-red-primary md:text-xs">
+                  LIVE
+                </span>
+              </h2>
+              <a
+                href="/search"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-gold-primary transition hover:text-gold-muted md:text-sm"
+              >
+                See All →
+              </a>
+            </div>
+
+            {liveLoading ? (
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <ProductSkeleton key={`live-skel-${i}`} />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 lg:grid-cols-5">
+                {liveProducts.map((p) => (
+                  <LiveProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Trending */}
       <section className="bg-white px-4 py-4 md:py-6">
         <div className="mx-auto max-w-[1800px]">
           <div className="mb-3 flex items-center justify-between md:mb-5">

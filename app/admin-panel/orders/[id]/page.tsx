@@ -40,10 +40,9 @@ export default function AdminOrderDetailPage({
   const [notFound, setNotFound] = useState(false);
 
   const [status, setStatus] = useState<OrderStatus>("placed");
-  const [chinaOrderId, setChinaOrderId] = useState("");
+  const [chinaOrderIds, setChinaOrderIds] = useState<string[]>([""]);
   const [adminNotes, setAdminNotes] = useState("");
 
-  // ✅ Shipping override
   const [shippingOverride, setShippingOverride] = useState<string>("");
   const [savingShipping, setSavingShipping] = useState(false);
 
@@ -84,7 +83,15 @@ export default function AdminOrderDetailPage({
         const data = { id: snap.id, ...(snap.data() as Omit<Order, "id">) };
         setOrder(data);
         setStatus(data.status);
-        setChinaOrderId(data.chinaOrderId ?? "");
+
+        // ✅ Load multi China IDs (migrate from legacy single)
+        const loadedIds: string[] = Array.isArray(data.chinaOrderIds)
+          ? data.chinaOrderIds.filter((x) => typeof x === "string")
+          : data.chinaOrderId
+          ? [data.chinaOrderId]
+          : [];
+        setChinaOrderIds(loadedIds.length > 0 ? loadedIds : [""]);
+
         setAdminNotes(data.adminNotes ?? "");
         setShippingOverride(String(data.shipping ?? 0));
 
@@ -138,15 +145,38 @@ export default function AdminOrderDetailPage({
     }
   };
 
+  // ✅ Multi China ID handlers
+  const addChinaId = () => setChinaOrderIds((prev) => [...prev, ""]);
+  const removeChinaId = (idx: number) =>
+    setChinaOrderIds((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length > 0 ? next : [""];
+    });
+  const updateChinaId = (idx: number, value: string) =>
+    setChinaOrderIds((prev) => prev.map((x, i) => (i === idx ? value : x)));
+
   const handleSaveChina = async () => {
     setSavingChina(true);
     try {
+      // ✅ Clean up: trim, remove empties
+      const cleaned = chinaOrderIds.map((x) => x.trim()).filter(Boolean);
+
       await updateDoc(doc(db, "orders", id), {
-        chinaOrderId: chinaOrderId.trim(),
+        chinaOrderIds: cleaned,
+        chinaOrderId: cleaned[0] ?? "", // keep legacy field synced
         updatedAt: serverTimestamp(),
       });
-      if (order) setOrder({ ...order, chinaOrderId: chinaOrderId.trim() });
-      showToast("China Order ID saved");
+
+      if (order) {
+        setOrder({
+          ...order,
+          chinaOrderIds: cleaned,
+          chinaOrderId: cleaned[0] ?? "",
+        });
+      }
+
+      setChinaOrderIds(cleaned.length > 0 ? cleaned : [""]);
+      showToast("China Order IDs saved");
     } catch (err) {
       console.error(err);
       showToast("Failed to save");
@@ -172,7 +202,6 @@ export default function AdminOrderDetailPage({
     }
   };
 
-  // ✅ Save shipping override and recalculate total / due
   const handleSaveShipping = async () => {
     if (!order) return;
     const newShipping = Number(shippingOverride) || 0;
@@ -474,15 +503,17 @@ export default function AdminOrderDetailPage({
         </div>
         <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark">
           <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
-            China Order ID (Admin only)
+            China Order IDs (Admin only)
           </p>
-          <p className="mt-1 font-mono text-lg font-bold text-text-primary">
-            {order.chinaOrderId || "— not set —"}
+          <p className="mt-1 font-mono text-sm font-bold text-text-primary">
+            {order.chinaOrderIds && order.chinaOrderIds.length > 0
+              ? order.chinaOrderIds.join(", ")
+              : order.chinaOrderId || "— not set —"}
           </p>
         </div>
       </div>
 
-      {/* ✅ SHIPPING CHARGE OVERRIDE */}
+      {/* SHIPPING CHARGE OVERRIDE */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
           Shipping Charge
@@ -649,7 +680,7 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {/* ✅ CHARGES — ALWAYS VISIBLE NOW */}
+      {/* CHARGES — ALWAYS VISIBLE */}
       <section className="mt-5 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-5 shadow-card-dark">
         <div className="mb-4">
           <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
@@ -863,27 +894,53 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
+      {/* ✅ MULTI CHINA ORDER IDs */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
-          China Order ID
+          China Order IDs
         </h2>
         <p className="mb-3 text-xs text-text-muted">
-          The 1688 order ID. Customer will NOT see this.
+          Add multiple 1688 order IDs (for bulk orders). Customer will NOT see these.
         </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
-            value={chinaOrderId}
-            onChange={(e) => setChinaOrderId(e.target.value)}
-            placeholder="e.g. CN-A8X9K2 or 12345678"
-            className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
-          />
+
+        <div className="space-y-2">
+          {chinaOrderIds.map((cid, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={cid}
+                onChange={(e) => updateChinaId(idx, e.target.value)}
+                placeholder={`e.g. CN-A8X9K2 or 12345678${idx > 0 ? ` (${idx + 1})` : ""}`}
+                className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+              />
+              {chinaOrderIds.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeChinaId(idx)}
+                  aria-label="Remove"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-red-primary/30 text-red-primary transition hover:bg-red-primary hover:text-white"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={addChinaId}
+            className="rounded-lg border-2 border-dashed border-gold-primary/40 bg-bg-orange px-4 py-2 text-xs font-semibold text-gold-primary transition hover:bg-gold-primary/10"
+          >
+            + Add another China ID
+          </button>
           <button
             onClick={handleSaveChina}
-            disabled={savingChina || chinaOrderId.trim() === (order.chinaOrderId ?? "")}
-            className="rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
+            disabled={savingChina}
+            className="ml-auto rounded-lg bg-gold-primary px-4 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
           >
-            {savingChina ? "Saving..." : "Save"}
+            {savingChina ? "Saving..." : "Save All"}
           </button>
         </div>
       </section>

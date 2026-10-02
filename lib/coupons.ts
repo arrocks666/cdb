@@ -1,7 +1,5 @@
 // lib/coupons.ts
-// Coupon system — Firestore helpers
-// Coupons are stored inside the user doc: users/{uid}.coupons[]
-// Admin gives them, user redeems at checkout.
+// Coupon system + user directory for admin panel.
 
 import {
   doc,
@@ -15,7 +13,7 @@ import { db } from "./firebase";
 
 export type Coupon = {
   code: string;
-  amount: number;         // ✅ taka amount (100 = ৳100 off)
+  amount: number;
   createdAt: number;
   expiresAt: number;
   used: boolean;
@@ -23,7 +21,6 @@ export type Coupon = {
   orderId?: string;
 };
 
-// ✅ Raw shape from Firestore — might have "amount" OR legacy "percent"
 type RawCoupon = {
   code?: string;
   amount?: number;
@@ -35,9 +32,14 @@ type RawCoupon = {
   orderId?: string;
 };
 
-// ✅ Normalize any Firestore coupon → our canonical shape
-// Legacy coupons stored "percent" — treat that number as a flat taka amount.
-// (No percentage math — admin was entering the taka value in a field named "percent".)
+// ✅ Also grab savedAddress so we can show real names in admin
+type RawSavedAddress = {
+  name?: string;
+  phone?: string;
+  address?: string;
+  district?: string;
+};
+
 function normalizeCoupon(raw: RawCoupon): Coupon | null {
   if (!raw || !raw.code) return null;
   const amount =
@@ -67,9 +69,6 @@ export function generateCouponCode(): string {
   return code;
 }
 
-/**
- * Give a coupon to a specific user (amount in taka).
- */
 export async function giveCoupon(
   uid: string,
   amount: number,
@@ -92,9 +91,6 @@ export async function giveCoupon(
   return coupon;
 }
 
-/**
- * Read all coupons for a user (normalized from legacy/current shapes).
- */
 export async function getUserCoupons(uid: string): Promise<Coupon[]> {
   try {
     const ref = doc(db, "users", uid);
@@ -111,17 +107,11 @@ export async function getUserCoupons(uid: string): Promise<Coupon[]> {
   }
 }
 
-/**
- * Return only valid (unused + not expired) coupons.
- */
 export function filterValidCoupons(coupons: Coupon[]): Coupon[] {
   const now = Date.now();
   return coupons.filter((c) => !c.used && c.expiresAt > now);
 }
 
-/**
- * Mark a coupon as used (vanish).
- */
 export async function markCouponUsed(
   uid: string,
   coupon: Coupon,
@@ -136,9 +126,11 @@ export async function markCouponUsed(
 
   const updated = coupons.map((c) => {
     if (c.code !== coupon.code) return c;
-    // ✅ Migrate on write: if it had "percent", rename to "amount"
     const migrated: RawCoupon & { amount?: number } = { ...c };
-    if (typeof migrated.amount !== "number" && typeof migrated.percent === "number") {
+    if (
+      typeof migrated.amount !== "number" &&
+      typeof migrated.percent === "number"
+    ) {
       migrated.amount = migrated.percent;
     }
     delete migrated.percent;
@@ -153,27 +145,44 @@ export async function markCouponUsed(
   await updateDoc(ref, { coupons: updated });
 }
 
+// ✅ Admin user directory
 export type AdminUser = {
   uid: string;
   phone?: string;
-  name?: string;
+  name?: string;          // resolved: top-level name OR savedAddress.name
   email?: string;
   coupons?: Coupon[];
+  savedAddress?: RawSavedAddress;
 };
 
 export async function getAllUsers(): Promise<AdminUser[]> {
   try {
     const snap = await getDocs(collection(db, "users"));
     return snap.docs.map((d) => {
-      const data = d.data() as { coupons?: RawCoupon[] } & Omit<AdminUser, "uid" | "coupons">;
+      const data = d.data() as {
+        coupons?: RawCoupon[];
+        name?: string;
+        phone?: string;
+        email?: string;
+        savedAddress?: RawSavedAddress;
+      };
+
       const rawCoupons = data.coupons ?? [];
       const normalized = rawCoupons
         .map(normalizeCoupon)
         .filter((c): c is Coupon => c !== null);
+
+      const savedAddress = data.savedAddress ?? {};
+      // ✅ Prefer top-level name, fall back to savedAddress.name
+      const resolvedName = data.name || savedAddress.name || undefined;
+
       return {
         uid: d.id,
-        ...data,
+        phone: data.phone ?? savedAddress.phone ?? undefined,
+        name: resolvedName,
+        email: data.email ?? undefined,
         coupons: normalized,
+        savedAddress,
       };
     });
   } catch (err) {

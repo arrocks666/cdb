@@ -1,10 +1,11 @@
 // lib/image-search.ts
 // Image search pipeline:
-//   1. crawleast/1688-image-search-scraper → accepts base64 directly, returns 1688 offerIds + listing data
-//   2. pizani/1688-product-scraper → full product with variants for each offerId
-//   3. Merge → LiveProduct
+//   1. Hash image → check Firestore cache
+//   2. Cache hit  → load products from liveProducts collection (fast!)
+//   3. Cache miss → Clawst (base64) → offerIds → Pizani per offerId
+//   4. Save each product to Firestore + remember hash → product ids
 //
-// No image hosting is needed — the actor takes base64 directly.
+// No image hosting needed — Clawst takes base64 directly.
 
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
@@ -17,7 +18,13 @@ import {
   pushProduct,
   type ImageSearchJob,
 } from "./imageSearchJobs";
-import type { LiveProduct } from "./live-search";
+import type { LiveProduct } from "./liveProduct";
+import {
+  saveLiveProduct,
+  saveSearchCache,
+  getSearchCache,
+  loadCachedProducts,
+} from "./firestoreLiveProducts";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const APIFY_IMAGE_SEARCH_ACTOR_ID = process.env.APIFY_IMAGE_SEARCH_ACTOR_ID;
@@ -28,7 +35,7 @@ if (!APIFY_IMAGE_SEARCH_ACTOR_ID)
 
 const PRODUCTS_WANTED = 3;
 const ASK_FOR = 5;
-const MIN_PRICE_BDT = 20; // reject sub-20 BDT products
+const MIN_PRICE_BDT = 20;
 
 const IS_DEV00 = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("dev00");
 const IS_CRAWLEAST = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("crawleast");
@@ -60,18 +67,26 @@ type RawImageSearchResult = {
   [key: string]: unknown;
 };
 
-// ---- Helper: strip data URL prefix if present ----
+// ---------- HELPERS ----------
 
 function toRawBase64(input: string): string {
   if (input.includes(",")) {
-    // looks like "data:image/jpeg;base64,XXX"
     const idx = input.indexOf(",");
     return input.slice(idx + 1);
   }
   return input;
 }
 
-// ---- Image search actor (base64, no hosting needed) ----
+// Simple hash of base64 (avoids huge strings becoming Firestore doc ids)
+function hashImageBase64(base64: string): string {
+  let h = 5381;
+  for (let i = 0; i < base64.length; i += 7) {
+    h = ((h << 5) + h + base64.charCodeAt(i)) >>> 0;
+  }
+  return `img_${h.toString(36)}_${base64.length}`;
+}
+
+// ---------- CLAWST ACTOR (image → offerIds) ----------
 
 function extractListings(raw: RawImageSearchResult): RawListing[] {
   if (Array.isArray(raw.results)) return raw.results as RawListing[];
@@ -99,7 +114,6 @@ async function findListingsByBase64(
   const rawBase64 = toRawBase64(dataUrlOrBase64);
   if (!rawBase64) throw new Error("Invalid image data");
 
-  // crawleast actor accepts `imagesBase64` (array of raw base64 strings)
   const input: Record<string, unknown> = {
     imagesBase64: [rawBase64],
     maxImages: 1,
@@ -136,7 +150,7 @@ async function findListingsByBase64(
   return allListings;
 }
 
-// ---- Fallback ----
+// ---------- FALLBACK (Clawst listing only) ----------
 
 function fallbackToLive(raw: RawListing): LiveProduct | null {
   const id = String(raw.offerId ?? raw.productId ?? "");
@@ -185,7 +199,7 @@ function fallbackToLive(raw: RawListing): LiveProduct | null {
   };
 }
 
-// ---- Convert PizaniProduct → LiveProduct ----
+// ---------- PIZANI → LIVE ----------
 
 function pizaniToLive(p: PizaniProduct): LiveProduct {
   return {
@@ -220,7 +234,7 @@ function pizaniToLive(p: PizaniProduct): LiveProduct {
   };
 }
 
-// ---- Main pipeline ----
+// ---------- MAIN PIPELINE ----------
 
 export async function runImageSearchJob(
   jobId: string,
@@ -230,6 +244,38 @@ export async function runImageSearchJob(
   try {
     updateJob(jobId, { status: "searching" });
 
+    // ✅ STEP 1: Compute hash → check Firestore cache
+    const rawBase64 = toRawBase64(imageBase64OrUrl);
+    const imageHash = hashImageBase64(rawBase64);
+    console.log(`[job ${jobId}] image hash = ${imageHash}`);
+
+    try {
+      const cachedIds = await getSearchCache(imageHash);
+      if (cachedIds.length > 0) {
+        console.log(`[job ${jobId}] CACHE HIT — ${cachedIds.length} products`);
+        const cachedProducts = await loadCachedProducts(cachedIds);
+        if (cachedProducts.length > 0) {
+          for (const p of cachedProducts) {
+            pushProduct(jobId, p);
+          }
+          updateJob(jobId, {
+            status: "done",
+            offerIds: cachedProducts.map((p) => p.id),
+            totalExpected: cachedProducts.length,
+          });
+          console.log(
+            `[job ${jobId}] DONE (cache) total=${Date.now() - t0}ms`
+          );
+          return;
+        }
+        // Cached ids exist but products deleted — fall through to live search
+        console.log(`[job ${jobId}] cache stale — re-searching`);
+      }
+    } catch (cacheErr) {
+      console.warn(`[job ${jobId}] cache lookup failed:`, cacheErr);
+    }
+
+    // ✅ STEP 2: Cache miss → Clawst
     const listings = await findListingsByBase64(imageBase64OrUrl);
     console.log(`[job ${jobId}] image search done at +${Date.now() - t0}ms`);
 
@@ -272,6 +318,9 @@ export async function runImageSearchJob(
 
     console.log(`[job ${jobId}] fetching details via pizani (parallel)...`);
 
+    // ✅ STEP 3: Pizani per offerId (parallel)
+    const savedProducts: LiveProduct[] = [];
+
     const tasks = offerIds.map(async (offerId) => {
       const tStart = Date.now();
       try {
@@ -279,6 +328,11 @@ export async function runImageSearchJob(
         if (detail) {
           const live = pizaniToLive(detail);
           pushProduct(jobId, live);
+          savedProducts.push(live);
+          // ✅ Save to Firestore (fire and forget — don't block)
+          saveLiveProduct(live).catch((err) =>
+            console.warn(`[job ${jobId}] save failed for ${live.id}:`, err)
+          );
           console.log(
             `[job ${jobId}] ✓ pizani ${live.id} in ${Date.now() - tStart}ms`
           );
@@ -291,7 +345,7 @@ export async function runImageSearchJob(
         );
       }
 
-      // Fallback (Clawst listing without Pizani enrichment)
+      // Fallback: use Clawst listing only
       const raw = listings.find(
         (l) => String(l.offerId ?? l.productId) === offerId
       );
@@ -299,6 +353,10 @@ export async function runImageSearchJob(
         const fallback = fallbackToLive(raw);
         if (fallback) {
           pushProduct(jobId, fallback);
+          savedProducts.push(fallback);
+          saveLiveProduct(fallback).catch((err) =>
+            console.warn(`[job ${jobId}] save failed for ${fallback.id}:`, err)
+          );
           console.log(`[job ${jobId}] ✓ fallback ${fallback.id}`);
         } else {
           console.log(`[job ${jobId}] ✗ fallback rejected (price too low)`);
@@ -307,6 +365,16 @@ export async function runImageSearchJob(
     });
 
     await Promise.all(tasks);
+
+    // ✅ STEP 4: Save image hash → product ids for next time
+    if (savedProducts.length > 0) {
+      saveSearchCache(
+        imageHash,
+        savedProducts.map((p) => p.id)
+      ).catch((err) =>
+        console.warn(`[job ${jobId}] cache save failed:`, err)
+      );
+    }
 
     updateJob(jobId, { status: "done" });
     console.log(`[job ${jobId}] DONE total=${Date.now() - t0}ms`);
@@ -319,7 +387,7 @@ export async function runImageSearchJob(
   }
 }
 
-// ---- legacy compat ----
+// ---------- LEGACY COMPAT ----------
 
 export async function imageSearch1688(
   imageUrl: string,

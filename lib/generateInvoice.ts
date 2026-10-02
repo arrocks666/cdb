@@ -1,5 +1,6 @@
 // lib/generateInvoice.ts
 // Generate PDF invoice for an order. Client-side.
+// ✅ Now includes product thumbnails per line item.
 
 import jsPDF from "jspdf";
 import type { Order } from "./OrderContext";
@@ -22,6 +23,7 @@ async function loadImageData(
 ): Promise<{ dataUrl: string; width: number; height: number } | null> {
   try {
     const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) return null;
     const blob = await res.blob();
     const dataUrl = await new Promise<string>((resolve) => {
       const reader = new FileReader();
@@ -118,7 +120,6 @@ export async function generateInvoice(
     : "";
   const paymentText = `Payment: ${order.paymentMethod}`;
 
-  // ✅ Pre-wrap the address so we know its height
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   const addressLine = `${custAddr}${custDistrict}`;
@@ -127,8 +128,6 @@ export async function generateInvoice(
     innerWidth - 6
   );
 
-  // ✅ Compute box height dynamically
-  // layout: title(6mm) + name(6mm) + phone(6mm) + address lines + padding(6mm)
   const boxHeight = 6 + 6 + 6 + addressWrapped.length * 5 + 6;
 
   pdf.setDrawColor(229, 229, 229);
@@ -149,10 +148,8 @@ export async function generateInvoice(
   cy += 6;
   pdf.text(`Phone: ${custPhone}`, margin + 3, cy);
   cy += 6;
-  // ✅ Address with proper wrapping — each line spaced 5mm
   pdf.text(addressWrapped, margin + 3, cy);
 
-  // Payment method — right-aligned on first content row
   pdf.text(paymentText, pageWidth - margin - 3, y + 12, { align: "right" });
 
   y += boxHeight + 8;
@@ -164,65 +161,89 @@ export async function generateInvoice(
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9);
-  pdf.text("ITEM", margin + 3, y + 5.5);
+  // Column X positions (mm from left):
+  //   Image: margin+2 (12mm wide)
+  //   Item:  margin+16
+  //   Qty:   pageWidth-margin-50
+  //   Price: pageWidth-margin-25
+  //   Total: pageWidth-margin-3
+  pdf.text("ITEM", margin + 16, y + 5.5);
   pdf.text("QTY", pageWidth - margin - 50, y + 5.5, { align: "right" });
   pdf.text("PRICE", pageWidth - margin - 25, y + 5.5, { align: "right" });
   pdf.text("TOTAL", pageWidth - margin - 3, y + 5.5, { align: "right" });
 
   y += 8;
 
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(9);
-  pdf.setTextColor(34, 34, 34);
-
   // ---------- ITEMS ROWS ----------
+  const ROW_HEIGHT = 16; // taller to fit image + wrapping
+
   for (let i = 0; i < order.items.length; i++) {
     const item = order.items[i];
     const lineTotal = item.price * item.quantity;
     const title = item.title || "Product";
-    const truncated = title.length > 55 ? title.slice(0, 52) + "…" : title;
+    const truncated = title.length > 45 ? title.slice(0, 42) + "…" : title;
 
-    // Page break if needed
+    // Page break check
     if (y > pageHeight - 60) {
       pdf.addPage();
       y = margin;
 
-      // Repeat table header on new page
+      // Repeat table header
       pdf.setFillColor(255, 102, 0);
       pdf.rect(margin, y, innerWidth, 8, "F");
       pdf.setTextColor(255, 255, 255);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9);
-      pdf.text("ITEM", margin + 3, y + 5.5);
+      pdf.text("ITEM", margin + 16, y + 5.5);
       pdf.text("QTY", pageWidth - margin - 50, y + 5.5, { align: "right" });
       pdf.text("PRICE", pageWidth - margin - 25, y + 5.5, { align: "right" });
       pdf.text("TOTAL", pageWidth - margin - 3, y + 5.5, { align: "right" });
       y += 8;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      pdf.setTextColor(34, 34, 34);
     }
 
+    // Zebra background
     if (i % 2 === 0) {
       pdf.setFillColor(250, 250, 250);
-      pdf.rect(margin, y, innerWidth, 8, "F");
+      pdf.rect(margin, y, innerWidth, ROW_HEIGHT, "F");
     }
 
+    // ✅ Thumbnail (12mm × 12mm) — best effort
+    if (item.image) {
+      const imgData = await loadImageData(item.image);
+      if (imgData) {
+        try {
+          pdf.addImage(
+            imgData.dataUrl,
+            "JPEG",
+            margin + 2,
+            y + 2,
+            12,
+            12
+          );
+        } catch (err) {
+          console.warn("Item image draw failed:", err);
+        }
+      }
+    }
+
+    // Item text (vertically centered)
     pdf.setTextColor(34, 34, 34);
-    pdf.text(truncated, margin + 3, y + 5.5);
-    pdf.text(String(item.quantity), pageWidth - margin - 50, y + 5.5, {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(truncated, margin + 16, y + 9.5);
+
+    pdf.text(String(item.quantity), pageWidth - margin - 50, y + 9.5, {
       align: "right",
     });
-    pdf.text(formatTk(item.price), pageWidth - margin - 25, y + 5.5, {
+    pdf.text(formatTk(item.price), pageWidth - margin - 25, y + 9.5, {
       align: "right",
     });
     pdf.setFont("helvetica", "bold");
-    pdf.text(formatTk(lineTotal), pageWidth - margin - 3, y + 5.5, {
+    pdf.text(formatTk(lineTotal), pageWidth - margin - 3, y + 9.5, {
       align: "right",
     });
-    pdf.setFont("helvetica", "normal");
 
-    y += 8;
+    y += ROW_HEIGHT;
   }
 
   y += 4;

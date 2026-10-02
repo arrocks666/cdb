@@ -18,6 +18,8 @@ export default function CartPage() {
   const { products } = useProducts();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+  // ✅ Track editing per row so we can show empty input while user types
+  const [editingQty, setEditingQty] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
@@ -87,7 +89,6 @@ export default function CartPage() {
   const selectedRows = cartRows.filter((r) => isSelected(r.key));
   const subtotal = selectedRows.reduce((sum, r) => sum + r.lineTotal, 0);
 
-  // ✅ Read shipping from settings
   const shipping =
     selectedRows.length > 0 ? settings.shippingCharge ?? 0 : 0;
   const total = subtotal + shipping;
@@ -95,6 +96,24 @@ export default function CartPage() {
   const handleCheckout = () => {
     const keys = selectedRows.map((r) => r.key).join(",");
     router.push(`/checkout?items=${encodeURIComponent(keys)}`);
+  };
+
+  // ✅ Quantity input handlers
+  const handleQtyChange = (row: (typeof cartRows)[0], raw: string) => {
+    setEditingQty((prev) => ({ ...prev, [row.key]: raw }));
+  };
+
+  const commitQty = (row: (typeof cartRows)[0]) => {
+    const raw = editingQty[row.key];
+    if (raw === undefined) return; // no edit in progress
+    const parsed = parseInt(raw, 10);
+    const finalQty = !parsed || parsed < 1 ? 1 : parsed;
+    cart.updateQty(row.productId, row.colorId, row.size, finalQty);
+    setEditingQty((prev) => {
+      const next = { ...prev };
+      delete next[row.key];
+      return next;
+    });
   };
 
   if (cartRows.length === 0) {
@@ -136,48 +155,79 @@ export default function CartPage() {
 
       <div className="mx-auto max-w-[1800px] px-3 py-3 md:px-4 md:py-4">
         <div className="space-y-2.5">
-          {cartRows.map((row) => (
-            <div key={row.key} className="rounded-lg border border-border-subtle bg-white p-3 shadow-card-dark">
-              <div className="flex items-start gap-3">
-                <button
-                  onClick={() => toggleSelected(row.key)}
-                  className={`mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${isSelected(row.key) ? "border-gold-primary bg-gold-primary" : "border-border-subtle bg-white"}`}
-                >
-                  {isSelected(row.key) && (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </button>
+          {cartRows.map((row) => {
+            const isEditing = editingQty[row.key] !== undefined;
+            const inputValue = isEditing
+              ? editingQty[row.key]
+              : String(row.quantity);
 
-                <Link href={row.href} className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white">
-                  <CartImage src={row.image} />
-                </Link>
+            return (
+              <div key={row.key} className="rounded-lg border border-border-subtle bg-white p-3 shadow-card-dark">
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => toggleSelected(row.key)}
+                    className={`mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${isSelected(row.key) ? "border-gold-primary bg-gold-primary" : "border-border-subtle bg-white"}`}
+                  >
+                    {isSelected(row.key) && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
 
-                <div className="min-w-0 flex-1">
-                  <Link href={row.href}>
-                    <h3 className="text-[12px] font-medium leading-tight text-text-primary line-clamp-2 md:text-sm">{row.title}</h3>
+                  <Link href={row.href} className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white">
+                    <CartImage src={row.image} />
                   </Link>
-                  <div className="mt-1.5 text-sm font-bold text-red-primary md:text-base">{formatBDT(row.price)}</div>
-                </div>
-              </div>
 
-              <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
-                <div className="inline-flex items-center rounded border border-border-subtle bg-white">
-                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity - 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">−</button>
-                  <span className="w-8 text-center text-sm font-semibold tabular-nums text-text-primary">{row.quantity}</span>
-                  <button onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity + 1)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary">+</button>
+                  <div className="min-w-0 flex-1">
+                    <Link href={row.href}>
+                      <h3 className="text-[12px] font-medium leading-tight text-text-primary line-clamp-2 md:text-sm">{row.title}</h3>
+                    </Link>
+                    <div className="mt-1.5 text-sm font-bold text-red-primary md:text-base">{formatBDT(row.price)}</div>
+                  </div>
                 </div>
 
-                <button aria-label="Remove" onClick={() => cart.remove(row.productId, row.colorId, row.size)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-red-primary">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
+                <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
+                  <div className="inline-flex items-center rounded border border-border-subtle bg-white">
+                    <button
+                      onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity - 1)}
+                      className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={inputValue}
+                      onChange={(e) => handleQtyChange(row, e.target.value)}
+                      onBlur={() => commitQty(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          (e.target as HTMLInputElement).blur();
+                        }
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-12 border-0 bg-transparent text-center text-sm font-semibold tabular-nums text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <button
+                      onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity + 1)}
+                      className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-gold-primary"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button aria-label="Remove" onClick={() => cart.remove(row.productId, row.colorId, row.size)} className="flex h-8 w-8 items-center justify-center text-text-secondary transition hover:text-red-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

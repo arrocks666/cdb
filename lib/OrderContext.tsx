@@ -44,7 +44,6 @@ export type OrderItem = {
   isLive?: boolean;
 };
 
-// NEW: individual payment row
 export type OrderPayment = {
   id: string;
   amount: number;
@@ -53,7 +52,6 @@ export type OrderPayment = {
   addedBy?: string;
 };
 
-// NEW: admin-managed charges shown after arrival
 export type OrderCharges = {
   chinaLocalCourier?: number;
   shippingCharge?: number;
@@ -93,7 +91,11 @@ export type Order = {
   paymentScreenshots?: string[];
   payments?: OrderPayment[];
 
+  // ✅ Legacy single China order id (kept for backward compat)
   chinaOrderId?: string;
+  // ✅ NEW — multiple China order ids
+  chinaOrderIds?: string[];
+
   adminNotes?: string;
   statusUpdatedAt?: unknown;
 
@@ -197,7 +199,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const paidAmount = draft.paidAmount ?? total;
     const dueAmount = Math.max(0, total - paidAmount);
 
-    // Initialize payment history with the first payment (if any)
     const initialPayments: OrderPayment[] = [];
     if (paidAmount > 0) {
       initialPayments.push({
