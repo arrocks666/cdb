@@ -56,11 +56,21 @@ export default function Footer() {
               Contact
             </h3>
             <div className="mt-3 space-y-2.5 text-[11px] md:text-xs">
-              {settings.contactAddress && (
+              {settings.contactAddressBD && (
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5 text-gold-primary">📍</span>
                   <p className="whitespace-pre-line text-text-secondary">
-                    {settings.contactAddress}
+                    <span className="font-semibold text-text-primary">Bangladesh: </span>
+                    {settings.contactAddressBD}
+                  </p>
+                </div>
+              )}
+              {settings.contactAddressCN && (
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5 text-gold-primary">📍</span>
+                  <p className="whitespace-pre-line text-text-secondary">
+                    <span className="font-semibold text-text-primary">China: </span>
+                    {settings.contactAddressCN}
                   </p>
                 </div>
               )}

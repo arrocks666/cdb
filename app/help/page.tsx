@@ -51,10 +51,22 @@ export default function HelpPage() {
         <section id="contact" className="scroll-mt-32 mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
           <h2 className="text-base font-bold text-text-primary md:text-lg">Contact</h2>
           <div className="mt-3 space-y-2.5 text-xs md:text-sm">
-            {settings.contactAddress && (
+            {settings.contactAddressBD && (
               <div className="flex items-start gap-2">
                 <span className="mt-0.5 text-gold-primary">📍</span>
-                <p className="whitespace-pre-line text-text-secondary">{settings.contactAddress}</p>
+                <p className="whitespace-pre-line text-text-secondary">
+                  <span className="font-semibold text-text-primary">Bangladesh: </span>
+                  {settings.contactAddressBD}
+                </p>
+              </div>
+            )}
+            {settings.contactAddressCN && (
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-gold-primary">📍</span>
+                <p className="whitespace-pre-line text-text-secondary">
+                  <span className="font-semibold text-text-primary">China: </span>
+                  {settings.contactAddressCN}
+                </p>
               </div>
             )}
             {settings.contactEmail && (
@@ -163,17 +175,11 @@ export default function HelpPage() {
           <h2 className="text-base font-bold text-text-primary md:text-lg">
             Shipping Charge
           </h2>
-          {settings.shippingCharge === 0 ? (
-            <p className="mt-2 text-xs font-semibold text-success md:text-sm">
-              ✓ Free Shipping — no additional charge for delivery.
-            </p>
-          ) : (
-            <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
-              Flat shipping charge of ৳{settings.shippingCharge} applies to all orders.
-            </p>
-          )}
           <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
-            Additional China → Bangladesh courier charges may apply based on product weight. These are calculated after your order arrives in our Bangladesh warehouse.
+            Shipping charges are calculated after your order is placed and confirmed by our team. The final amount depends on the actual weight and dimensions of your product after it arrives at our Bangladesh warehouse.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-text-secondary md:text-sm">
+            You will be notified of the exact shipping charge before we ship the product to you.
           </p>
         </section>
 

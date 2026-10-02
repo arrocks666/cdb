@@ -1,29 +1,18 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatBDT } from "@/lib/data";
 import { useProducts } from "@/lib/ProductsContext";
 import { useCart } from "@/lib/CartContext";
-import {
-  loadSettings,
-  DEFAULT_SETTINGS,
-  type StoreSettings,
-} from "@/lib/firestoreSettings";
 
 export default function CartPage() {
   const router = useRouter();
   const cart = useCart();
   const { products } = useProducts();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
-  // ✅ Track editing per row so we can show empty input while user types
   const [editingQty, setEditingQty] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    loadSettings().then(setSettings).catch(() => {});
-  }, []);
 
   const cartRows = useMemo(() => {
     return cart.items
@@ -88,24 +77,21 @@ export default function CartPage() {
 
   const selectedRows = cartRows.filter((r) => isSelected(r.key));
   const subtotal = selectedRows.reduce((sum, r) => sum + r.lineTotal, 0);
-
-  const shipping =
-    selectedRows.length > 0 ? settings.shippingCharge ?? 0 : 0;
-  const total = subtotal + shipping;
+  // Shipping added later by admin — total = subtotal
+  const total = subtotal;
 
   const handleCheckout = () => {
     const keys = selectedRows.map((r) => r.key).join(",");
     router.push(`/checkout?items=${encodeURIComponent(keys)}`);
   };
 
-  // ✅ Quantity input handlers
   const handleQtyChange = (row: (typeof cartRows)[0], raw: string) => {
     setEditingQty((prev) => ({ ...prev, [row.key]: raw }));
   };
 
   const commitQty = (row: (typeof cartRows)[0]) => {
     const raw = editingQty[row.key];
-    if (raw === undefined) return; // no edit in progress
+    if (raw === undefined) return;
     const parsed = parseInt(raw, 10);
     const finalQty = !parsed || parsed < 1 ? 1 : parsed;
     cart.updateQty(row.productId, row.colorId, row.size, finalQty);
@@ -208,7 +194,7 @@ export default function CartPage() {
                         }
                       }}
                       onFocus={(e) => e.target.select()}
-                      className="w-12 border-0 bg-transparent text-center text-sm font-semibold tabular-nums text-text-primary outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className="w-12 border-0 bg-transparent text-center text-sm font-semibold tabular-nums text-text-primary outline-none focus:bg-bg-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <button
                       onClick={() => cart.updateQty(row.productId, row.colorId, row.size, row.quantity + 1)}
@@ -240,9 +226,7 @@ export default function CartPage() {
             </div>
             <div className="flex justify-between text-text-secondary">
               <span>Shipping</span>
-              <span className={shipping === 0 ? "font-semibold text-success" : "text-text-primary"}>
-                {shipping === 0 ? "Free" : formatBDT(shipping)}
-              </span>
+              <span className="text-text-muted">—</span>
             </div>
             <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
               <span className="text-sm font-semibold text-text-primary md:text-base">Total</span>

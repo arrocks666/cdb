@@ -57,7 +57,8 @@ export default function AdminSettingsPage() {
         faqItems: settings.faqItems,
         contactPhone: settings.contactPhone,
         contactEmail: settings.contactEmail,
-        contactAddress: settings.contactAddress,
+        contactAddressBD: settings.contactAddressBD,
+        contactAddressCN: settings.contactAddressCN,
         ownerName: settings.ownerName,
         whatsappNumber: settings.whatsappNumber,
         whatsappNumber2: settings.whatsappNumber2,
@@ -196,7 +197,6 @@ export default function AdminSettingsPage() {
     update("markupTiers", DEFAULT_MARKUP_TIERS);
   };
 
-  // ✅ FAQ helpers
   const addFaq = () => {
     if (settings.faqItems.length >= 10) {
       alert("Maximum 10 FAQs allowed");
@@ -651,7 +651,7 @@ export default function AdminSettingsPage() {
           </p>
           <div className="space-y-3">
             <TextField
-              label="Owner / Business Name (shown as 'Owner Name (Recommended)')"
+              label="Owner / Business Name"
               value={settings.ownerName}
               onChange={(v) => update("ownerName", v)}
               placeholder="e.g. Md. Rahim Uddin"
@@ -677,7 +677,7 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* SHIPPING DETAILS (Bangla) */}
+        {/* SHIPPING DETAILS */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
             Shipping Details (বিস্তারিত)
@@ -710,7 +710,8 @@ export default function AdminSettingsPage() {
           <div className="space-y-3">
             <TextField label="Contact Phone" value={settings.contactPhone} onChange={(v) => update("contactPhone", v)} />
             <TextField label="Contact Email" value={settings.contactEmail} onChange={(v) => update("contactEmail", v)} />
-            <TextField label="Contact Address" value={settings.contactAddress} onChange={(v) => update("contactAddress", v)} />
+            <TextField label="Bangladesh Address" value={settings.contactAddressBD} onChange={(v) => update("contactAddressBD", v)} placeholder="e.g. Dhaka, Bangladesh" />
+            <TextField label="China Address" value={settings.contactAddressCN} onChange={(v) => update("contactAddressCN", v)} placeholder="e.g. Guangzhou, China" />
             <TextField label="WhatsApp Number 1 (digits only)" value={settings.whatsappNumber} onChange={(v) => update("whatsappNumber", v)} />
             <TextField label="WhatsApp Number 2 (digits only)" value={settings.whatsappNumber2} onChange={(v) => update("whatsappNumber2", v)} />
           </div>
@@ -730,7 +731,7 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* SAVE BUTTON */}
+        {/* SAVE */}
         <div className="flex justify-end">
           <button
             onClick={handleSave}

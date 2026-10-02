@@ -25,23 +25,23 @@ export type StoreSettings = {
   usdToBdt: number;
 
   returnPolicy: string;
-  termsPolicy: string;              // ✅ NEW
+  termsPolicy: string;
   deliveryInfo: string;
   howToOrder: string;
 
-  faqItems: FaqItem[];              // ✅ NEW — up to 10
+  faqItems: FaqItem[];
 
   contactPhone: string;
   contactEmail: string;
-  contactAddress: string;
-  ownerName: string;                // ✅ NEW — shown in footer
+  contactAddressBD: string;
+  contactAddressCN: string;
+  ownerName: string;
   whatsappNumber: string;
   whatsappNumber2: string;
 
-  // ✅ NEW — social links
   facebookUrl: string;
   instagramUrl: string;
-  footerDescription: string;        // ✅ NEW
+  footerDescription: string;
 
   byAirRate1: number;
   byAirRate2: number;
@@ -56,7 +56,6 @@ export type StoreSettings = {
   defaultWeightKg: number;
   shippingWarning: string;
 
-  // ✅ NEW — global flat shipping charge (0 = free)
   shippingCharge: number;
 
   bkashNumber: string;
@@ -81,7 +80,6 @@ export const DEFAULT_MARKUP_TIERS: MarkupTier[] = [
   { id: "tier-5", min: 10000, max: 99999999, multiplier: 1.12 },
 ];
 
-// ✅ Default FAQs — admin can edit/remove/add up to 10
 export const DEFAULT_FAQS: FaqItem[] = [
   { id: "faq-1", q: "How do I place an order?", a: "Browse products, tap 'Add to Cart' on items you like, then go to your cart and tap 'Proceed to Checkout'. Follow the 3 steps: address, payment, and confirm." },
   { id: "faq-2", q: "How long does shipping take?", a: "Delivery from China to Bangladesh typically takes 7–15 business days." },
@@ -112,7 +110,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
 
   contactPhone: "+880 1XXX-XXXXXX",
   contactEmail: "support@chinadailybazar.com",
-  contactAddress: "Dhaka, Bangladesh",
+  contactAddressBD: "Dhaka, Bangladesh",
+  contactAddressCN: "Guangzhou, China",
   ownerName: "ChinaDailyBazar Support",
   whatsappNumber: "8801689768307",
   whatsappNumber2: "8619822310841",
@@ -136,7 +135,7 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   shippingWarning:
     "উল্লেখিত পণ্যের ওজন সঠিক নয়, আনুমানিক মাত্র। বাংলাদেশে আসার পর পণ্যের প্রকৃত ওজন মেপে শিপিং চার্জ হিসাব করা হবে।",
 
-  shippingCharge: 0, // ✅ default 0 (free); admin can change
+  shippingCharge: 0,
 
   bkashNumber: "01711-111111",
   nagadNumber: "01811-111111",

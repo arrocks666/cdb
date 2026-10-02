@@ -141,15 +141,12 @@ function CheckoutContent() {
   }, [cart.items, selectedKeys.join(","), products]);
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
-
-  // ✅ Read shipping from settings — 0 means Free
-  const shipping =
-    rows.length > 0 ? settings.shippingCharge ?? 0 : 0;
-
+  // Shipping added later by admin — total = subtotal - discount
+  const shipping = 0;
   const discountAmount = appliedCoupon
     ? Math.min(appliedCoupon.amount, subtotal)
     : 0;
-  const total = subtotal + shipping - discountAmount;
+  const total = subtotal - discountAmount;
 
   const paidAmount =
     paidAmountInput === "" ? total : Number(paidAmountInput) || 0;
@@ -559,9 +556,7 @@ function CheckoutContent() {
                   </div>
                   <div className="flex justify-between text-text-secondary">
                     <span>Shipping</span>
-                    <span className={shipping === 0 ? "font-semibold text-success" : "text-text-primary"}>
-                      {shipping === 0 ? "Free" : formatBDT(shipping)}
-                    </span>
+                    <span className="text-text-muted">—</span>
                   </div>
                   {appliedCoupon && discountAmount > 0 && (
                     <div className="flex justify-between text-success">
