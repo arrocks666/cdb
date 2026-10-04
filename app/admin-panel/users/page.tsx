@@ -9,6 +9,7 @@ import {
   type Coupon,
 } from "@/lib/coupons";
 import { formatBDT } from "@/lib/adminOrders";
+import UserOrdersModal from "@/components/UserOrdersModal";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -18,6 +19,8 @@ export default function AdminUsersPage() {
   const [amount, setAmount] = useState<number>(100);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // ✅ NEW — selected user for orders modal
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -90,7 +93,7 @@ export default function AdminUsersPage() {
           Manage Users
         </h1>
         <p className="mt-1 text-sm text-text-muted">
-          Give ৳ discount coupons to specific customers.
+          Click a user to view their orders and outstanding dues.
         </p>
       </div>
 
@@ -137,45 +140,60 @@ export default function AdminUsersPage() {
                 className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark"
               >
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-bg-orange text-xl">
-                    👤
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    {/* ✅ Name first, then phone, then uid */}
-                    <p className="text-sm font-bold text-text-primary md:text-base">
-                      {displayName}
-                    </p>
-                    <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
-                      {u.phone || "No phone"}
-                    </p>
-                    <p className="mt-0.5 truncate font-mono text-[10px] text-text-muted md:text-[11px]">
-                      {u.uid}
-                    </p>
-
-                    {/* Address snippet if saved */}
-                    {hasAddress && (
-                      <p className="mt-1 truncate text-[11px] text-text-muted md:text-xs">
-                        📍 {u.savedAddress?.address}
-                        {u.savedAddress?.district
-                          ? `, ${u.savedAddress.district}`
-                          : ""}
-                      </p>
-                    )}
-
-                    {valid.length > 0 && (
-                      <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-bg-orange px-2 py-0.5 text-[10px] font-bold text-gold-primary">
-                        🎟️ {valid.length} active coupon{valid.length > 1 ? "s" : ""}
-                      </p>
-                    )}
-                  </div>
-
+                  {/* ✅ Name + phone + uid are clickable → opens orders modal */}
                   <button
-                    onClick={() => setOpenGiveFor(isOpen ? null : u.uid)}
-                    className="rounded-lg border-2 border-gold-primary bg-white px-4 py-2 text-xs font-semibold text-gold-primary transition hover:bg-bg-orange md:text-sm"
+                    type="button"
+                    onClick={() => setSelectedUser(u)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left transition hover:opacity-80"
                   >
-                    🎁 Give Coupon
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-bg-orange text-xl">
+                      👤
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-text-primary md:text-base">
+                        {displayName}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                        {u.phone || "No phone"}
+                      </p>
+                      <p className="mt-0.5 truncate font-mono text-[10px] text-text-muted md:text-[11px]">
+                        {u.uid}
+                      </p>
+
+                      {hasAddress && (
+                        <p className="mt-1 truncate text-[11px] text-text-muted md:text-xs">
+                          📍 {u.savedAddress?.address}
+                          {u.savedAddress?.district
+                            ? `, ${u.savedAddress.district}`
+                            : ""}
+                        </p>
+                      )}
+
+                      {valid.length > 0 && (
+                        <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-bg-orange px-2 py-0.5 text-[10px] font-bold text-gold-primary">
+                          🎟️ {valid.length} active coupon
+                          {valid.length > 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
                   </button>
+
+                  <div className="flex flex-shrink-0 gap-2">
+                    {/* ✅ NEW — View Orders button */}
+                    <button
+                      onClick={() => setSelectedUser(u)}
+                      className="rounded-lg border-2 border-gold-primary bg-white px-3 py-2 text-xs font-semibold text-gold-primary transition hover:bg-bg-orange md:px-4 md:text-sm"
+                    >
+                      📋 View Orders
+                    </button>
+                    <button
+                      onClick={() => setOpenGiveFor(isOpen ? null : u.uid)}
+                      className="rounded-lg border-2 border-gold-primary bg-white px-3 py-2 text-xs font-semibold text-gold-primary transition hover:bg-bg-orange md:px-4 md:text-sm"
+                    >
+                      🎁 Give Coupon
+                    </button>
+                  </div>
                 </div>
 
                 {isOpen && (
@@ -221,7 +239,8 @@ export default function AdminUsersPage() {
                               {formatBDT(c.amount)} OFF
                             </span>
                             <span className="text-text-muted">
-                              exp {new Date(c.expiresAt).toLocaleDateString("en-GB")}
+                              exp{" "}
+                              {new Date(c.expiresAt).toLocaleDateString("en-GB")}
                             </span>
                           </div>
                         ))}
@@ -234,6 +253,12 @@ export default function AdminUsersPage() {
           })
         )}
       </div>
+
+      {/* ✅ Orders modal */}
+      <UserOrdersModal
+        user={selectedUser}
+        onClose={() => setSelectedUser(null)}
+      />
     </div>
   );
 }

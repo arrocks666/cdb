@@ -151,12 +151,13 @@ export default function AdminProductsPage() {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* ✅ Import from 1688 — replaces old Refresh button */}
           <Link
-            href="/admin-panel/products/refresh"
+            href="/admin-panel/products/import"
             className="rounded-lg border-2 border-gold-primary bg-white px-4 py-2.5 text-sm font-semibold text-gold-primary transition hover:bg-bg-orange"
           >
-            🔄 Refresh Products
+            📥 Import from 1688
           </Link>
           <Link
             href="/admin-panel/products/new"
