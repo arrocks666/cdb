@@ -1,15 +1,5 @@
 // lib/liveProduct.ts
 // Canonical home for LiveProduct types.
-// This replaces the type exports from lib/live-search.ts (deprecated Zen scraper).
-//
-// Files that should import from here instead of "@/lib/live-search":
-//   - lib/image-search.ts
-//   - lib/LiveProductContext.tsx
-//   - app/live-product/[id]/page.tsx
-//   - components/LiveProductCard.tsx
-//   - app/admin-panel/orders/new/page.tsx
-//   - app/search/page.tsx
-//   - components/ImageSearchModal.tsx
 
 export type LiveProductColor = {
   id: string;
@@ -26,6 +16,7 @@ export type LiveProductVariant = {
   stock?: number;
   image?: string;
   skuId?: string;
+  specId?: string;
 };
 
 export type LiveProduct = {
@@ -59,4 +50,12 @@ export type LiveProduct = {
   priceOriginalCny?: number;
   isLive?: boolean;
   weightKg?: number;
+  skuPrices?: {
+    [specId: string]: {
+      priceCny: number;
+      discountPriceCny: number;
+      stock?: number;
+    };
+  };
+  pricingVersion?: number;
 };

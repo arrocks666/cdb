@@ -85,6 +85,7 @@ export type PizaniProduct = {
     stock?: number;
     image?: string;
     skuId?: string;
+    specId?: string;      // ✅ NEW — same as skuId, for merging with parsebird
   }[];
   specs?: { name: string; value: string }[];
   inStock: boolean;
@@ -183,6 +184,7 @@ function parseOptions(options: RawOption[]): {
       stock: opt.stock,
       image: opt.imgUrl ?? undefined,
       skuId: opt.skuNo,
+      specId: opt.skuNo,   // ✅ same as skuId — used for merge with parsebird
     });
   }
 

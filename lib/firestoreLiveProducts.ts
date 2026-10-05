@@ -1,8 +1,5 @@
 // lib/firestoreLiveProducts.ts
-// Persist live products (from image search) to Firestore so shared URLs work.
-// Collections:
-//   liveProducts/{id}         — one doc per product (id = "live-XXXXXXXX")
-//   live_search_cache/{hash}  — image hash → array of product ids (fast repeat searches)
+// Persist live products to Firestore. No version checks.
 
 import {
   doc,
@@ -22,9 +19,6 @@ import type { LiveProduct } from "./liveProduct";
 const LIVE_COLLECTION = "liveProducts";
 const CACHE_COLLECTION = "live_search_cache";
 
-// ---------- SAVE / READ PRODUCTS ----------
-
-/** Save or update a live product. Idempotent — same id updates the doc. */
 export async function saveLiveProduct(p: LiveProduct): Promise<void> {
   try {
     const ref = doc(db, LIVE_COLLECTION, p.id);
@@ -32,27 +26,22 @@ export async function saveLiveProduct(p: LiveProduct): Promise<void> {
       ...p,
       savedAt: serverTimestamp(),
     };
-    // Strip undefined values (Firestore rejects them)
     await setDoc(ref, stripUndefined(payload), { merge: true });
   } catch (err) {
-    // Never throw — bulk save shouldn't break the UI
     console.error(`[saveLiveProduct] failed for ${p.id}:`, err);
   }
 }
 
-/** Save many live products at once (fire-and-forget per product). */
 export async function saveLiveProducts(products: LiveProduct[]): Promise<void> {
   await Promise.all(products.map((p) => saveLiveProduct(p)));
 }
 
-/** Get a single live product by id. Returns null if not found. */
 export async function getLiveProduct(id: string): Promise<LiveProduct | null> {
   try {
     const ref = doc(db, LIVE_COLLECTION, id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
     const data = snap.data() as LiveProduct & { savedAt?: unknown };
-    // Strip Firestore metadata
     delete (data as any).savedAt;
     return data;
   } catch (err) {
@@ -61,7 +50,6 @@ export async function getLiveProduct(id: string): Promise<LiveProduct | null> {
   }
 }
 
-/** Get most recent live products (for the "Recently Found" homepage section). */
 export async function getRecentLiveProducts(
   maxResults: number = 20
 ): Promise<LiveProduct[]> {
@@ -83,7 +71,6 @@ export async function getRecentLiveProducts(
   }
 }
 
-/** Delete a live product (manual cleanup if needed). */
 export async function deleteLiveProduct(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, LIVE_COLLECTION, id));
@@ -92,9 +79,6 @@ export async function deleteLiveProduct(id: string): Promise<void> {
   }
 }
 
-// ---------- IMAGE HASH CACHE ----------
-
-/** Store: hash → [productId1, productId2, ...]. Overwrites any previous entry. */
 export async function saveSearchCache(
   imageHash: string,
   productIds: string[]
@@ -114,10 +98,7 @@ export async function saveSearchCache(
   }
 }
 
-/** Get cached product IDs for an image hash. Returns [] if not cached. */
-export async function getSearchCache(
-  imageHash: string
-): Promise<string[]> {
+export async function getSearchCache(imageHash: string): Promise<string[]> {
   try {
     const ref = doc(db, CACHE_COLLECTION, imageHash);
     const snap = await getDoc(ref);
@@ -130,7 +111,6 @@ export async function getSearchCache(
   }
 }
 
-/** Load full live products for cached ids. Skips any that no longer exist. */
 export async function loadCachedProducts(
   productIds: string[]
 ): Promise<LiveProduct[]> {
@@ -138,8 +118,6 @@ export async function loadCachedProducts(
   const results = await Promise.all(productIds.map((id) => getLiveProduct(id)));
   return results.filter((p): p is LiveProduct => p !== null);
 }
-
-// ---------- HELPERS ----------
 
 function stripUndefined<T>(obj: T): T {
   if (Array.isArray(obj)) {

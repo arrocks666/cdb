@@ -18,7 +18,7 @@ import { trackProductView } from "@/lib/firestoreAnalytics";
 import ColorPickerModal from "@/components/ColorPickerModal";
 import ShippingDetailsModal from "@/components/ShippingDetailsModal";
 
-const COLORS_SHOWN_INLINE = 6;
+const COLORS_SHOWN_INLINE = 999;
 
 function findLocation(
   features?: { icon: string; label: string }[]
@@ -127,18 +127,26 @@ export default function ProductPage({
     product.subtitle && !hasChinese(product.subtitle) ? product.subtitle : null;
   const location = findLocation(product.features);
 
-  const weightKg = product.weightKg ?? settings.defaultWeightKg;
+  const weightKg = product.weightKg ?? 0;
   const weightNum = quantity * weightKg;
 
-  const payNowAmount = Math.round(
-    (product.price * quantity * settings.payNowPercent) / 100
+  // ✅ LIVE PRICE from selected variant
+  const selectedVariant = product.variants?.find(
+    (v) =>
+      v.colorId === selectedColorId &&
+      (v.size ?? "") === (selectedSize ?? "")
   );
-  const payOnDeliveryAmount = product.price * quantity - payNowAmount;
+  const livePrice = Number(selectedVariant?.price) || product.price;
+
+  const payNowAmount = Math.round(
+    (livePrice * quantity * settings.payNowPercent) / 100
+  );
+  const payOnDeliveryAmount = livePrice * quantity - payNowAmount;
 
   const priceLabel =
     product.priceMax && product.priceMax > product.price
       ? `${formatBDT(product.price)} – ${formatBDT(product.priceMax)}`
-      : formatBDT(product.price);
+      : formatBDT(livePrice);
 
   const handleAddToCart = () => {
     cart.add(
@@ -508,7 +516,7 @@ export default function ProductPage({
               <div className="flex justify-between text-text-secondary">
                 <span>Product price</span>
                 <span className="font-medium text-text-primary">
-                  {formatBDT(product.price * quantity)}
+                  {formatBDT(livePrice * quantity)}
                 </span>
               </div>
               <div className="flex justify-between text-text-secondary">
@@ -539,36 +547,39 @@ export default function ProductPage({
               </div>
             </div>
 
-            <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
-                  <span className="text-base">⚖️</span>
-                  Approximate weight: {weightNum.toFixed(1)}kg
+            {/* ✅ Weight box — only show if we have real weight data */}
+            {product.weightKg != null && product.weightKg > 0 && (
+              <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
+                    <span className="text-base">⚖️</span>
+                    Approximate weight: {weightNum.toFixed(2)}kg
+                  </div>
+                  <button
+                    onClick={() => setShowShippingDetails(true)}
+                    className="text-[11px] font-medium text-gold-primary underline md:text-xs"
+                  >
+                    বিস্তারিত
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowShippingDetails(true)}
-                  className="text-[11px] font-medium text-gold-primary underline md:text-xs"
-                >
-                  বিস্তারিত
-                </button>
+                {showWeightDetails && (
+                  <div className="mt-2 border-t border-red-primary/20 pt-2">
+                    <p className="text-sm font-bold text-text-primary">
+                      শিপিং চার্জ
+                    </p>
+                    <p className="mt-0.5 text-xs text-text-secondary">
+                      ৳
+                      {shippingMethod === "air"
+                        ? settings.byAirRate1
+                        : settings.bySeaRate}{" "}
+                      /{" "}
+                      {shippingMethod === "air" ? settings.byAirRate2 : "kg"}{" "}
+                      Per Kg
+                    </p>
+                  </div>
+                )}
               </div>
-              {showWeightDetails && (
-                <div className="mt-2 border-t border-red-primary/20 pt-2">
-                  <p className="text-sm font-bold text-text-primary">
-                    শিপিং চার্জ
-                  </p>
-                  <p className="mt-0.5 text-xs text-text-secondary">
-                    ৳
-                    {shippingMethod === "air"
-                      ? settings.byAirRate1
-                      : settings.bySeaRate}{" "}
-                    /{" "}
-                    {shippingMethod === "air" ? settings.byAirRate2 : "kg"} Per
-                    Kg
-                  </p>
-                </div>
-              )}
-            </div>
+            )}
 
             {settings.shippingWarning && (
               <p className="mt-3 text-[11px] leading-relaxed text-red-primary md:text-xs">

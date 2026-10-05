@@ -1,6 +1,6 @@
 // lib/parsebird1688.ts
 // Wrapper around parsebird/1688-wholesale-scraper.
-// Uses ASYNC run mode + retry on 0-results.
+// Uses ASYNC run mode + retry + SKU details.
 
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
@@ -16,6 +16,14 @@ const POLL_INTERVAL_MS = 5000;
 const MAX_WAIT_MS = 10 * 60 * 1000;
 const RETRY_DELAY_MS = 2000;
 
+export type ParsebirdVariant = {
+  specId: string;
+  skuId: string;
+  priceCny: number;
+  discountPriceCny: number;
+  stock?: number;
+};
+
 export type ParsebirdListing = {
   offerId: string;
   title: string;
@@ -30,6 +38,11 @@ export type ParsebirdListing = {
   minOrderQuantity: number;
   supplierName: string;
   location: string;
+  skuColors: {
+    name: string;
+    imageUrl?: string;
+  }[];
+  skuVariants: ParsebirdVariant[];
 };
 
 type RawParsebirdProduct = {
@@ -46,6 +59,21 @@ type RawParsebirdProduct = {
   minOrderQuantity?: number | null;
   supplier?: { companyName?: string };
   shipping?: { location?: string | null };
+  skuDetails?: {
+    totalVariants?: number;
+    properties?: {
+      name?: string;
+      values?: { name?: string; imageUrl?: string }[];
+    }[];
+    variants?: {
+      specId?: string;
+      skuId?: string;
+      price?: number | string;
+      discountPrice?: number | string;
+      originalPrice?: number | string;
+      stock?: number | null;
+    }[];
+  };
 };
 
 function isRealProductImage(url: string): boolean {
@@ -125,8 +153,43 @@ function transformListings(items: RawParsebirdProduct[]): ParsebirdListing[] {
     const mainImage = pickMainImage(p);
     if (!mainImage) continue;
 
-    const priceMin = p.price?.min ?? 0;
+    const priceMin = Number(p.price?.min) || 0;
     if (priceMin <= 0) continue;
+
+    const skuColors: ParsebirdListing["skuColors"] = [];
+    const skuVariants: ParsebirdVariant[] = [];
+
+    if (p.skuDetails?.properties) {
+      for (const prop of p.skuDetails.properties) {
+        if (prop.values) {
+          for (const val of prop.values) {
+            if (val.name) {
+              skuColors.push({
+                name: val.name,
+                imageUrl: val.imageUrl,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (p.skuDetails?.variants) {
+      for (const v of p.skuDetails.variants) {
+        if (!v.specId) continue;
+        const priceNum = Number(v.price) || 0;
+        const discountNum =
+          Number(v.discountPrice ?? v.price) || priceNum;
+
+        skuVariants.push({
+          specId: v.specId,
+          skuId: v.skuId ?? "",
+          priceCny: priceNum,
+          discountPriceCny: discountNum,
+          stock: v.stock ?? undefined,
+        });
+      }
+    }
 
     listings.push({
       offerId,
@@ -134,15 +197,17 @@ function transformListings(items: RawParsebirdProduct[]): ParsebirdListing[] {
       detailUrl:
         p.detailUrl ?? `https://detail.1688.com/offer/${offerId}.html`,
       priceMinCny: priceMin,
-      priceMaxCny: p.price?.max ?? priceMin,
+      priceMaxCny: Number(p.price?.max) || priceMin,
       images: p.images ?? [],
       mainImage,
       descriptionImages: p.descriptionImages ?? [],
       salesCount: parseSalesCount(p),
-      unitWeightKg: p.unitWeight ?? 0,
-      minOrderQuantity: p.minOrderQuantity ?? 1,
+      unitWeightKg: Number(p.unitWeight) || 0,
+      minOrderQuantity: Number(p.minOrderQuantity) || 1,
       supplierName: p.supplier?.companyName ?? "1688 Supplier",
       location: p.shipping?.location ?? "",
+      skuColors,
+      skuVariants,
     });
   }
 
@@ -160,12 +225,11 @@ export async function parsebirdSearch(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const t0 = Date.now();
 
-    // ✅ No proxyConfiguration — plain request works, RESIDENTIAL gets blocked
     const input = {
       keywords: [keyword],
       maxResults,
       includeDescriptionHtml: false,
-      includeSkuDetails: false,
+      includeSkuDetails: true,
       includeSupplierIntelligence: false,
     };
 
@@ -193,9 +257,7 @@ export async function parsebirdSearch(
         return listings;
       }
 
-      console.log(
-        `[parsebird] attempt ${attempt} returned 0 — retrying...`
-      );
+      console.log(`[parsebird] attempt ${attempt} returned 0 — retrying...`);
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       }
@@ -214,4 +276,28 @@ export async function parsebirdSearch(
     `[parsebird] all ${maxRetries} attempts returned 0 results (total ${Date.now() - overallStart}ms)`
   );
   return [];
+}
+
+export async function parsebirdByOfferId(
+  offerId: string
+): Promise<ParsebirdListing | null> {
+  const input = {
+    offerIds: [offerId],
+    maxResults: 1,
+    includeDescriptionHtml: false,
+    includeSkuDetails: true,
+    includeSupplierIntelligence: false,
+  };
+
+  try {
+    const runId = await startRun(input);
+    await waitForRun(runId);
+    const items = await fetchRunResults(runId);
+    if (items.length === 0) return null;
+    const listings = transformListings(items);
+    return listings[0] ?? null;
+  } catch (err) {
+    console.warn(`[parsebird] offerId ${offerId} failed:`, err);
+    return null;
+  }
 }
