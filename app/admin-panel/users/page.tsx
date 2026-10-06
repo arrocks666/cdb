@@ -19,8 +19,13 @@ export default function AdminUsersPage() {
   const [amount, setAmount] = useState<number>(100);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  // ✅ NEW — selected user for orders modal
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+
+  // ✅ NEW — password reset state
+  const [openResetFor, setOpenResetFor] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -58,6 +63,42 @@ export default function AdminUsersPage() {
       showToast("Failed to give coupon");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ✅ NEW — reset password via API
+  const handleResetPassword = async (user: AdminUser) => {
+    if (!newPassword || newPassword.length < 6) {
+      setResetError("Password must be at least 6 characters");
+      return;
+    }
+    if (!user.phone) {
+      setResetError("This user has no phone number on file");
+      return;
+    }
+
+    setResetting(true);
+    setResetError(null);
+    try {
+      const res = await fetch("/api/admin/set-user-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: user.phone, newPassword }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setResetError(data.error || "Failed to reset password");
+        return;
+      }
+
+      showToast(`✅ Password reset for ${data.phone}`);
+      setNewPassword("");
+      setOpenResetFor(null);
+    } catch (err: any) {
+      setResetError(err.message || "Something went wrong");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -131,6 +172,7 @@ export default function AdminUsersPage() {
           filtered.map((u) => {
             const valid = filterValidCoupons(u.coupons ?? []);
             const isOpen = openGiveFor === u.uid;
+            const isResetting = openResetFor === u.uid;
             const displayName = u.name || "Unnamed User";
             const hasAddress = u.savedAddress?.address;
 
@@ -140,7 +182,6 @@ export default function AdminUsersPage() {
                 className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark"
               >
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* ✅ Name + phone + uid are clickable → opens orders modal */}
                   <button
                     type="button"
                     onClick={() => setSelectedUser(u)}
@@ -179,8 +220,7 @@ export default function AdminUsersPage() {
                     </div>
                   </button>
 
-                  <div className="flex flex-shrink-0 gap-2">
-                    {/* ✅ NEW — View Orders button */}
+                  <div className="flex flex-shrink-0 flex-wrap gap-2">
                     <button
                       onClick={() => setSelectedUser(u)}
                       className="rounded-lg border-2 border-gold-primary bg-white px-3 py-2 text-xs font-semibold text-gold-primary transition hover:bg-bg-orange md:px-4 md:text-sm"
@@ -193,9 +233,21 @@ export default function AdminUsersPage() {
                     >
                       🎁 Give Coupon
                     </button>
+                    {/* ✅ NEW — Reset Password button */}
+                    <button
+                      onClick={() => {
+                        setOpenResetFor(isResetting ? null : u.uid);
+                        setNewPassword("");
+                        setResetError(null);
+                      }}
+                      className="rounded-lg border-2 border-red-primary bg-white px-3 py-2 text-xs font-semibold text-red-primary transition hover:bg-red-primary/5 md:px-4 md:text-sm"
+                    >
+                      🔑 Reset Password
+                    </button>
                   </div>
                 </div>
 
+                {/* Coupon section (existing) */}
                 {isOpen && (
                   <div className="mt-4 border-t border-border-subtle pt-4">
                     <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
@@ -248,13 +300,46 @@ export default function AdminUsersPage() {
                     )}
                   </div>
                 )}
+
+                {/* ✅ NEW — Reset password section */}
+                {isResetting && (
+                  <div className="mt-4 border-t border-red-primary/30 pt-4">
+                    <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                      New Password (min 6 characters)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                        className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleResetPassword(u)}
+                        disabled={resetting || newPassword.length < 6}
+                        className="rounded-lg bg-red-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+                      >
+                        {resetting ? "Setting..." : "Set Password"}
+                      </button>
+                    </div>
+                    {resetError && (
+                      <p className="mt-2 text-[11px] text-red-primary">
+                        ❌ {resetError}
+                      </p>
+                    )}
+                    <p className="mt-2 text-[11px] text-text-muted">
+                      Tell this new password to the customer. They log in with
+                      phone + password.
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </div>
 
-      {/* ✅ Orders modal */}
       <UserOrdersModal
         user={selectedUser}
         onClose={() => setSelectedUser(null)}

@@ -191,6 +191,10 @@ function transformListings(items: RawParsebirdProduct[]): ParsebirdListing[] {
       }
     }
 
+    // ✅ FIX — 1688 returns unitWeight in GRAMS; convert to kg for consistency
+    const rawWeight = Number(p.unitWeight) || 0;
+    const unitWeightKg = rawWeight > 0 ? rawWeight / 1000 : 0;
+
     listings.push({
       offerId,
       title: (p.title ?? "").trim(),
@@ -202,7 +206,7 @@ function transformListings(items: RawParsebirdProduct[]): ParsebirdListing[] {
       mainImage,
       descriptionImages: p.descriptionImages ?? [],
       salesCount: parseSalesCount(p),
-      unitWeightKg: Number(p.unitWeight) || 0,
+      unitWeightKg,
       minOrderQuantity: Number(p.minOrderQuantity) || 1,
       supplierName: p.supplier?.companyName ?? "1688 Supplier",
       location: p.shipping?.location ?? "",

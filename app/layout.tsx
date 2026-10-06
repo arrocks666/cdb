@@ -22,9 +22,8 @@ const playfair = Playfair_Display({
   display: "swap",
 });
 
-// ⚠️ Change this to your real URL AFTER deploying to Netlify
-// Example: "https://chinadailybazar.netlify.app"
-const SITE_URL = "https://chinadailybazar.netlify.app";
+// ✅ Final domain
+const SITE_URL = "https://chinadailybazar.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -33,33 +32,33 @@ export const metadata: Metadata = {
     template: "%s | ChinaDailyBazar",
   },
   description:
-    "Premium Chinese products delivered to Bangladesh. Trendy, quality, affordable. Shop electronics, fashion, home & living and more.",
+    "Quality Chinese products, delivered across Bangladesh. Direct from verified 1688 manufacturers. Fast delivery, honest pricing.",
   keywords: [
     "ChinaDailyBazar",
     "Chinese products Bangladesh",
     "online shopping Bangladesh",
     "e-commerce BD",
+    "1688 wholesale Bangladesh",
   ],
 
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    apple: "/apple-icon.png",
   },
 
   openGraph: {
     type: "website",
     siteName: "ChinaDailyBazar",
     title: "ChinaDailyBazar — Best Chinese Products",
-    description:
-      "Trendy Chinese products at unbeatable prices. Delivered across Bangladesh in 7–15 days.",
+    description: "Quality Chinese products, delivered across Bangladesh.",
     url: SITE_URL,
     images: [
       {
-        url: "/og-image.svg",
+        url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "ChinaDailyBazar — Best Chinese Products Delivered to Bangladesh",
+        alt: "ChinaDailyBazar — Quality Chinese products delivered to Bangladesh",
       },
     ],
   },
@@ -67,9 +66,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "ChinaDailyBazar",
-    description:
-      "Trendy Chinese products at unbeatable prices. Delivered across Bangladesh.",
-    images: ["/og-image.svg"],
+    description: "Quality Chinese products, delivered across Bangladesh.",
+    images: ["/og-image.png"],
   },
 };
 

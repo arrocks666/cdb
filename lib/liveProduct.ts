@@ -57,5 +57,6 @@ export type LiveProduct = {
       stock?: number;
     };
   };
-  pricingVersion?: number;
+  // ✅ NEW — timestamp of last 1688 re-check (ms since epoch)
+  lastRefreshedAt?: number;
 };

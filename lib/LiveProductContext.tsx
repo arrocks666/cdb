@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { LiveProduct } from "./live-search";
+import { LiveProduct } from "./liveProduct";
 
 type LiveProductContextType = {
   save: (product: LiveProduct) => void;
@@ -18,7 +18,7 @@ type LiveProductContextType = {
 
 const LiveProductContext = createContext<LiveProductContextType | null>(null);
 const STORAGE_KEY = "cdb_live_products";
-const MAX_STORED = 100; // keep last 100 products
+const MAX_STORED = 100;
 
 export function LiveProductProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<LiveProduct[]>([]);
@@ -41,15 +41,15 @@ export function LiveProductProvider({ children }: { children: ReactNode }) {
 
   const save = (product: LiveProduct) => {
     setProducts((prev) => {
+      // ✅ No-op if the same product is already at the front (stops re-render loops)
+      if (prev[0]?.id === product.id) return prev;
       const filtered = prev.filter((p) => p.id !== product.id);
       return [product, ...filtered].slice(0, MAX_STORED);
     });
   };
 
   const get = (id: string) => products.find((p) => p.id === id);
-
   const getAll = () => products;
-
   const clear = () => setProducts([]);
 
   return (

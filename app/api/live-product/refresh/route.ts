@@ -1,5 +1,5 @@
 // app/api/live-product/refresh/route.ts
-// Re-enriches a stale live product by re-running Parsebird + Pizani.
+// Re-scrapes 1688 with Pizani + Parsebird for accurate per-variant prices.
 
 import { NextRequest } from "next/server";
 import { getDoc, doc } from "firebase/firestore";
@@ -13,7 +13,6 @@ import type { LiveProduct } from "@/lib/liveProduct";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-// ✅ In-memory lock to prevent duplicate refreshes for the same product
 const inflight = new Map<string, Promise<LiveProduct | null>>();
 
 export async function GET(request: NextRequest) {
@@ -23,7 +22,6 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    // ✅ Join existing refresh if already in-flight
     if (inflight.has(id)) {
       console.log(`[refresh] ${id} already in-flight — joining`);
       const existing = await inflight.get(id)!;
@@ -36,10 +34,7 @@ export async function GET(request: NextRequest) {
     try {
       const product = await work;
       if (!product) {
-        return Response.json(
-          { error: "Failed to fetch product details" },
-          { status: 500 }
-        );
+        return Response.json({ error: "Failed to refresh" }, { status: 500 });
       }
       return Response.json({ product });
     } finally {
@@ -62,7 +57,7 @@ async function doRefresh(id: string): Promise<LiveProduct | null> {
   const offerId = extractOfferId(id, oldData);
   if (!offerId) return null;
 
-  console.log(`[refresh] ${id} offerId=${offerId} — re-enriching`);
+  console.log(`[refresh] ${id} offerId=${offerId} — re-scraping (Pizani + Parsebird)`);
 
   const [parsebird, pizani] = await Promise.all([
     parsebirdByOfferId(offerId).catch((err) => {
@@ -79,10 +74,11 @@ async function doRefresh(id: string): Promise<LiveProduct | null> {
 
   const merged = mergeToLiveForRefresh(pizani, parsebird);
   merged.id = id;
+  merged.lastRefreshedAt = Date.now();
 
   await saveLiveProduct(merged);
 
-  console.log(`[refresh] ${id} ✓ re-enriched`);
+  console.log(`[refresh] ${id} ✓ refreshed (৳${merged.price})`);
   return merged;
 }
 

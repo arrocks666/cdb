@@ -32,7 +32,6 @@ if (!APIFY_IMAGE_SEARCH_ACTOR_ID)
 const PRODUCTS_WANTED = 3;
 const ASK_FOR = 5;
 const MIN_PRICE_BDT = 20;
-const PRICING_VERSION = 3;
 
 const IS_DEV00 = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("dev00");
 const IS_CRAWLEAST = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("crawleast");
@@ -72,6 +71,7 @@ function toRawBase64(input: string): string {
   return input;
 }
 
+// ✅ Stable hash — deterministic across runs of the same image
 function hashImageBase64(base64: string): string {
   let h = 5381;
   for (let i = 0; i < base64.length; i += 7) {
@@ -186,6 +186,7 @@ function fallbackToLive(raw: RawListing): LiveProduct | null {
     ),
     priceOriginalCny: priceCny,
     isLive: true,
+    lastRefreshedAt: Date.now(),
   };
 }
 
@@ -288,13 +289,11 @@ export function mergeToLive(
     }
   }
 
-  // ✅ WEIGHT — no fallback. Undefined = product has no weight data.
+  // Weight: Parsebird unitWeightKg first, else parse from Pizani specs
   let weightKg: number | undefined = undefined;
-
   if (parsebird?.unitWeightKg && parsebird.unitWeightKg > 0) {
     weightKg = parsebird.unitWeightKg;
   }
-
   if (!weightKg) {
     weightKg = parseWeightFromSpecs(pizani.specs);
   }
@@ -360,7 +359,7 @@ export function mergeToLive(
     weightKg,
     skuPrices:
       Object.keys(skuPrices).length > 0 ? skuPrices : undefined,
-    pricingVersion: PRICING_VERSION,
+    lastRefreshedAt: Date.now(),
   };
 }
 
@@ -383,9 +382,11 @@ export async function runImageSearchJob(
     const imageHash = hashImageBase64(rawBase64);
     console.log(`[job ${jobId}] image hash = ${imageHash}`);
 
+    // ✅ Try cache first
     try {
       const cachedIds = await getSearchCache(imageHash);
       if (cachedIds.length > 0) {
+        console.log(`[job ${jobId}] CACHE HIT — ${cachedIds.length} ids`);
         const cachedProducts = await loadCachedProducts(cachedIds);
         if (cachedProducts.length > 0) {
           for (const p of cachedProducts) pushProduct(jobId, p);
@@ -404,6 +405,7 @@ export async function runImageSearchJob(
       console.warn(`[job ${jobId}] cache lookup failed:`, cacheErr);
     }
 
+    // Cache miss — scrape fresh
     const listings = await findListingsByBase64(imageBase64OrUrl);
     console.log(`[job ${jobId}] image search done at +${Date.now() - t0}ms`);
 
@@ -459,11 +461,20 @@ export async function runImageSearchJob(
           const live = mergeToLive(detail, parsebirdData);
           pushProduct(jobId, live);
           savedProducts.push(live);
-          saveLiveProduct(live).catch((err) =>
-            console.warn(`[job ${jobId}] save failed for ${live.id}:`, err)
-          );
+
+          // ✅ AWAIT the save so it actually commits
+          try {
+            await saveLiveProduct(live);
+            console.log(`[job ${jobId}] ✓ saved ${live.id} to Firestore`);
+          } catch (saveErr) {
+            console.warn(
+              `[job ${jobId}] ✗ save failed for ${live.id}:`,
+              saveErr
+            );
+          }
+
           console.log(
-            `[job ${jobId}] ✓ ${live.id} (pizani + parsebird) in ${Date.now() - tStart}ms`
+            `[job ${jobId}] ✓ ${live.id} in ${Date.now() - tStart}ms`
           );
           return;
         }
@@ -480,7 +491,14 @@ export async function runImageSearchJob(
         if (fallback) {
           pushProduct(jobId, fallback);
           savedProducts.push(fallback);
-          saveLiveProduct(fallback).catch(() => {});
+          try {
+            await saveLiveProduct(fallback);
+          } catch (saveErr) {
+            console.warn(
+              `[job ${jobId}] ✗ save failed for ${fallback.id}:`,
+              saveErr
+            );
+          }
           console.log(`[job ${jobId}] ✓ fallback ${fallback.id}`);
         }
       }
@@ -488,11 +506,19 @@ export async function runImageSearchJob(
 
     await Promise.all(tasks);
 
+    // ✅ AWAIT the cache write so it actually commits
     if (savedProducts.length > 0) {
-      saveSearchCache(
-        imageHash,
-        savedProducts.map((p) => p.id)
-      ).catch((err) => console.warn(`[job ${jobId}] cache save failed:`, err));
+      try {
+        await saveSearchCache(
+          imageHash,
+          savedProducts.map((p) => p.id)
+        );
+        console.log(
+          `[job ${jobId}] ✓ saved ${savedProducts.length} ids to search cache`
+        );
+      } catch (cacheErr) {
+        console.warn(`[job ${jobId}] ✗ cache save failed:`, cacheErr);
+      }
     }
 
     updateJob(jobId, { status: "done" });

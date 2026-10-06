@@ -19,6 +19,7 @@ import {
 import ShippingDetailsModal from "@/components/ShippingDetailsModal";
 
 const COLORS_SHOWN_INLINE = 999;
+const FIFTEEN_DAYS = 15 * 24 * 60 * 60 * 1000;
 
 function findLocation(
   features?: { icon: string; label: string }[]
@@ -60,6 +61,8 @@ export default function LiveProductPage({
   const [selectedColorId, setSelectedColorId] = useState<string>("");
   const [selectedSize, setSelectedSize] = useState<string>("");
   const [activeImage, setActiveImage] = useState(0);
+  const [userPickedImage, setUserPickedImage] = useState(false);
+  const [userPickedVariant, setUserPickedVariant] = useState(false); // ✅ NEW
   const [showColorModal, setShowColorModal] = useState(false);
   const [colorSearch, setColorSearch] = useState("");
 
@@ -67,26 +70,64 @@ export default function LiveProductPage({
     loadSettings().then(setSettings).catch(() => {});
   }, []);
 
-  // ✅ Simple: localStorage → Firestore. No version checks.
+  // ✅ Load from localStorage → Firestore. Silent 15-day refresh if stale.
   useEffect(() => {
     const found = liveStore.get(id);
     if (found) {
       setProduct(found);
+      maybeRefresh(found);
       return;
     }
+
     setLoadingFromFirestore(true);
     getLiveProduct(id)
       .then((p) => {
         if (p) {
           setProduct(p);
-          liveStore.save(p);
+          if (!liveStore.get(id)) liveStore.save(p);
+          maybeRefresh(p);
         } else {
           setNotFound(true);
         }
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoadingFromFirestore(false));
-  }, [id, liveStore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  function maybeRefresh(p: LiveProduct) {
+    if (typeof window === "undefined") return;
+
+    const last = p.lastRefreshedAt ?? 0;
+    const age = Date.now() - last;
+
+    if (last > 0 && age < FIFTEEN_DAYS) return;
+
+    const KEY = `refreshed_${p.id}`;
+    if (sessionStorage.getItem(KEY)) return;
+    sessionStorage.setItem(KEY, "1");
+
+    console.log(
+      `[live-product] ${p.id} ${
+        last === 0
+          ? "no timestamp (legacy)"
+          : `${Math.round(age / 86400000)}d old`
+      } — refreshing in background`
+    );
+
+    fetch(`/api/live-product/refresh?id=${encodeURIComponent(p.id)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.product) {
+          setProduct(data.product);
+          liveStore.save(data.product);
+          console.log(`[live-product] ${p.id} ✓ refreshed`);
+        }
+      })
+      .catch((err) =>
+        console.warn(`[live-product] refresh failed:`, err)
+      );
+  }
 
   useEffect(() => {
     if (!product) return;
@@ -149,7 +190,10 @@ export default function LiveProductPage({
     product.variants?.find((v) => v.colorId === selectedColorId && v.image)
       ?.image;
 
-  const currentImage = variantImage || gallery[activeImage] || product.image;
+  const currentImage = userPickedImage
+    ? gallery[activeImage] || product.image
+    : variantImage || gallery[activeImage] || product.image;
+
   const showImage = currentImage && !imgFailed;
   const location = findLocation(features);
 
@@ -164,17 +208,29 @@ export default function LiveProductPage({
       v.colorId === selectedColorId &&
       (v.size ?? "") === (selectedSize ?? "")
   );
-  const livePrice = Number(selectedVariant?.price) || product.price;
+
+  const variantPrice = Number(selectedVariant?.price) || 0;
+  const variantPriceIsValid =
+    variantPrice > 0 && variantPrice >= product.price * 0.5;
+  const livePrice = variantPriceIsValid ? variantPrice : product.price;
 
   const payNowAmount = Math.round(
     (livePrice * quantity * settings.payNowPercent) / 100
   );
   const payOnDeliveryAmount = livePrice * quantity - payNowAmount;
 
+  // ✅ NEW — top price label
+  // If user picked a variant → show that variant's exact price
+  // Otherwise → show range (if variants differ) or base price
+  const rangeExists =
+    product.priceMax != null && product.priceMax > product.price;
+
   const priceLabel =
-    product.priceMax && product.priceMax > product.price
-      ? `${formatBDT(product.price)} – ${formatBDT(product.priceMax)}`
-      : formatBDT(livePrice);
+    userPickedVariant && variantPriceIsValid
+      ? formatBDT(livePrice)
+      : rangeExists
+        ? `${formatBDT(product.price)} – ${formatBDT(product.priceMax!)}`
+        : formatBDT(product.price);
 
   const handleAddToCart = () => {
     cart.addLive(
@@ -348,6 +404,7 @@ export default function LiveProductPage({
                     onClick={() => {
                       setActiveImage(i);
                       setImgFailed(false);
+                      setUserPickedImage(true);
                     }}
                     className={`flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 bg-white p-1 transition ${
                       activeImage === i
@@ -447,7 +504,11 @@ export default function LiveProductPage({
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() => setSelectedColorId(c.id)}
+                        onClick={() => {
+                          setSelectedColorId(c.id);
+                          setUserPickedImage(false);
+                          setUserPickedVariant(true);   // ✅ NEW
+                        }}
                         title={c.label}
                         className={`group flex flex-col overflow-hidden rounded-lg border-2 bg-white text-left transition ${
                           active
@@ -520,7 +581,10 @@ export default function LiveProductPage({
                       <button
                         key={s}
                         type="button"
-                        onClick={() => setSelectedSize(s)}
+                        onClick={() => {
+                          setSelectedSize(s);
+                          setUserPickedVariant(true);   // ✅ NEW
+                        }}
                         className={`min-w-[42px] rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition ${
                           active
                             ? "border-gold-primary bg-bg-orange text-gold-primary"
@@ -667,23 +731,26 @@ export default function LiveProductPage({
               </div>
             </div>
 
-            {product.weightKg != null && product.weightKg > 0 && (
-              <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
-                    <span className="text-base">⚖️</span>
-                    Approximate weight: {weightNum.toFixed(2)}kg
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowShippingDetails(true)}
-                    className="text-[11px] font-medium text-gold-primary underline md:text-xs"
-                  >
-                    বিস্তারিত
-                  </button>
+            {/* ✅ Weight box — always shown */}
+            <div className="mt-4 rounded-lg border-2 border-dashed border-red-primary/40 bg-red-primary/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-red-primary md:text-sm">
+                  <span className="text-base">⚖️</span>
+                  {product.weightKg != null && product.weightKg > 0 ? (
+                    <span>Approximate weight: {weightNum.toFixed(2)}kg</span>
+                  ) : (
+                    <span>Approximate weight: not available</span>
+                  )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowShippingDetails(true)}
+                  className="flex-shrink-0 text-[11px] font-medium text-gold-primary underline md:text-xs"
+                >
+                  বিস্তারিত
+                </button>
               </div>
-            )}
+            </div>
 
             {settings.shippingWarning && (
               <p className="mt-3 text-[11px] leading-relaxed text-red-primary md:text-xs">
@@ -790,4 +857,100 @@ export default function LiveProductPage({
                 </p>
               </div>
               <button
-               
+                type="button"
+                onClick={() => setShowColorModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-text-muted transition hover:bg-bg-input hover:text-red-primary"
+              >
+                ✕
+              </button>
+            </div>
+
+            {colors.length > 8 && (
+              <div className="border-b border-border-subtle px-4 py-2.5">
+                <input
+                  type="text"
+                  value={colorSearch}
+                  onChange={(e) => setColorSearch(e.target.value)}
+                  placeholder="Search colors..."
+                  className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                />
+              </div>
+            )}
+
+            <div className="max-h-[60vh] overflow-y-auto p-3">
+              {filteredColors.length === 0 ? (
+                <div className="py-10 text-center text-sm text-text-muted">
+                  No colors match "{colorSearch}"
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                  {filteredColors.map((c) => {
+                    const active = c.id === selectedColorId;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedColorId(c.id);
+                          setShowColorModal(false);
+                          setUserPickedImage(false);
+                          setUserPickedVariant(true);   // ✅ NEW
+                        }}
+                        className={`flex flex-col items-center gap-1.5 overflow-hidden rounded-lg border-2 bg-white p-2 transition ${
+                          active
+                            ? "border-gold-primary shadow-orange-glow"
+                            : "border-border-subtle hover:border-gold-primary/60"
+                        }`}
+                      >
+                        {c.image ? (
+                          <img
+                            src={c.image}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="h-14 w-14 rounded object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <span
+                            className="h-10 w-10 rounded-full border border-black/10"
+                            style={{ backgroundColor: c.hex }}
+                          />
+                        )}
+                        <span className="line-clamp-2 w-full text-center text-[10px] font-medium leading-tight text-text-primary md:text-xs">
+                          {c.label}
+                        </span>
+                        {active && (
+                          <span className="text-[9px] font-bold text-gold-primary">
+                            ✓ Selected
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border-subtle px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowColorModal(false)}
+                className="w-full rounded-lg border border-border-subtle bg-white py-2.5 text-xs font-semibold text-text-secondary transition hover:bg-bg-input md:text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ShippingDetailsModal
+        open={showShippingDetails}
+        onClose={() => setShowShippingDetails(false)}
+      />
+    </div>
+  );
+}

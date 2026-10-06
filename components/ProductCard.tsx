@@ -49,7 +49,11 @@ export default function ProductCard({ product }: { product: Product }) {
         </svg>
       </div>
 
-      <Link href={`/product/${product.id}`} className="block flex-1">
+      <Link
+        href={`/product/${product.id}`}
+        prefetch={false}
+        className="block flex-1"
+      >
         <div className="relative aspect-square flex items-center justify-center overflow-hidden rounded-md m-2" style={{ backgroundColor: "#F9F9F9" }}>
           {showImage ? (
             <img

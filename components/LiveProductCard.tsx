@@ -1,29 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { formatBDT } from "@/lib/data";
-import { LiveProduct } from "@/lib/live-search";
+import { LiveProduct } from "@/lib/liveProduct";
 import { useWishlist } from "@/lib/WishlistContext";
-import { useLiveProducts } from "@/lib/LiveProductContext";
 
 export default function LiveProductCard({ product }: { product: LiveProduct }) {
   const wishlist = useWishlist();
-  const liveStore = useLiveProducts();
   const inWishlist = wishlist.has(product.id);
   const [imgFailed, setImgFailed] = useState(false);
-
-  // Auto-save to live store so the detail page can find it
-  useEffect(() => {
-    liveStore.save(product);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [product.id]);
-
-  const handleGoToProduct = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    window.location.href = `/live-product/${product.id}`;
-  };
 
   const handleToggleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -80,7 +66,11 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
         </svg>
       </div>
 
-      <Link href={`/live-product/${product.id}`} className="block">
+      <Link
+        href={`/live-product/${product.id}`}
+        prefetch={false}
+        className="block"
+      >
         <div
           className="relative aspect-square flex items-center justify-center overflow-hidden rounded-md m-2"
           style={{ backgroundColor: "#F9F9F9" }}
@@ -117,9 +107,9 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
           <div className="mt-1 flex items-center gap-1 text-[10px] md:text-[11px]">
             <span className="text-gold-primary">★</span>
             <span className="text-text-secondary">
-              {product.rating.toFixed(1)}
+              {(product.rating ?? 4.5).toFixed(1)}
             </span>
-            <span className="text-text-muted">({product.reviews})</span>
+            <span className="text-text-muted">({product.reviews ?? 0})</span>
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">
             <span className="text-base font-bold text-red-primary md:text-lg">
@@ -135,8 +125,9 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
       </Link>
 
       <div className="px-2.5 pb-2.5 md:px-3 md:pb-3">
-        <button
-          onClick={handleGoToProduct}
+        <Link
+          href={`/live-product/${product.id}`}
+          prefetch={false}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gold-primary py-2 text-[11px] font-semibold text-white transition hover:bg-gold-luxury md:text-[12px]"
         >
           <svg
@@ -148,14 +139,13 @@ export default function LiveProductCard({ product }: { product: LiveProduct }) {
             strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ pointerEvents: "none" }}
           >
             <circle cx="9" cy="21" r="1" />
             <circle cx="20" cy="21" r="1" />
             <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
           </svg>
           Order Now
-        </button>
+        </Link>
       </div>
     </div>
   );

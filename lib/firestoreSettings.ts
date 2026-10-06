@@ -150,27 +150,67 @@ export const DEFAULT_SETTINGS: StoreSettings = {
 };
 
 const SETTINGS_DOC = ["settings", "general"] as const;
+const CACHE_KEY = "cdb_settings_cache_v1";
+const CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
+
+type CachedSettings = {
+  data: StoreSettings;
+  cachedAt: number;
+};
+
+let memoryCache: StoreSettings | null = null;
 
 export async function loadSettings(): Promise<StoreSettings> {
+  if (memoryCache) return memoryCache;
+
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as CachedSettings;
+      if (parsed.cachedAt && Date.now() - parsed.cachedAt < CACHE_TTL_MS) {
+        memoryCache = parsed.data;
+        return parsed.data;
+      }
+    }
+  } catch {}
+
   try {
     const ref = doc(db, SETTINGS_DOC[0], SETTINGS_DOC[1]);
     const snap = await getDoc(ref);
 
+    let result: StoreSettings;
     if (!snap.exists()) {
-      return DEFAULT_SETTINGS;
+      result = DEFAULT_SETTINGS;
+    } else {
+      const data = snap.data() as Partial<StoreSettings>;
+      result = {
+        ...DEFAULT_SETTINGS,
+        ...data,
+        markupTiers: data.markupTiers ?? DEFAULT_MARKUP_TIERS,
+        faqItems: data.faqItems ?? DEFAULT_FAQS,
+      };
     }
 
-    const data = snap.data() as Partial<StoreSettings>;
-    return {
-      ...DEFAULT_SETTINGS,
-      ...data,
-      markupTiers: data.markupTiers ?? DEFAULT_MARKUP_TIERS,
-      faqItems: data.faqItems ?? DEFAULT_FAQS,
-    };
+    memoryCache = result;
+    try {
+      localStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({ data: result, cachedAt: Date.now() })
+      );
+    } catch {}
+
+    return result;
   } catch (err) {
     console.error("Error loading settings:", err);
     return DEFAULT_SETTINGS;
   }
+}
+
+export function invalidateSettingsCache() {
+  memoryCache = null;
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {}
 }
 
 export async function saveSettings(
@@ -185,6 +225,7 @@ export async function saveSettings(
     },
     { merge: true }
   );
+  invalidateSettingsCache();
 }
 
 export function findMarkupMultiplier(

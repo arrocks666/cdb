@@ -1,6 +1,6 @@
 // lib/pizani1688.ts
 // Wrapper around pizani/1688-product-scraper.
-// Single endpoint → full product with images, specs, and full SKU matrix.
+// ✅ FIXED: variant prices are now stored as BDT (not USD)
 
 import * as dotenv from "dotenv";
 import * as fs from "fs";
@@ -85,7 +85,7 @@ export type PizaniProduct = {
     stock?: number;
     image?: string;
     skuId?: string;
-    specId?: string;      // ✅ NEW — same as skuId, for merging with parsebird
+    specId?: string;
   }[];
   specs?: { name: string; value: string }[];
   inStock: boolean;
@@ -147,6 +147,16 @@ async function translateAll(texts: string[]): Promise<string[]> {
   return Promise.all(texts.map((t) => translateSafe(t)));
 }
 
+// ✅ Convert CNY → BDT selling price
+function cnyToBdt(cny: number): number | undefined {
+  if (cny <= 0) return undefined;
+  return computePrice(cny, DEFAULT_PRICING).sellingBdt;
+}
+
+// =============================================
+// ✅ parseOptions — FIXED: converts CNY → BDT
+// =============================================
+
 function parseOptions(options: RawOption[]): {
   colors: { id: string; label: string; hex: string; image?: string }[];
   sizes: string[];
@@ -176,15 +186,20 @@ function parseOptions(options: RawOption[]): {
     if (sizeLabel) sizesSet.add(sizeLabel);
 
     const colorObj = colorMap.get(colorLabel);
+
+    // ✅ FIX — use priceCNY (real CNY), convert to BDT
+    const cnyValue = Number(opt.priceCNY) || 0;
+    const bdtValue = cnyToBdt(cnyValue);
+
     variants.push({
       colorId: colorObj?.id,
       size: sizeLabel || undefined,
-      priceCny: opt.priceCNY ?? undefined,
-      price: opt.price ?? undefined,
+      priceCny: cnyValue > 0 ? cnyValue : undefined,
+      price: bdtValue,              // ✅ BDT number, not USD string
       stock: opt.stock,
       image: opt.imgUrl ?? undefined,
       skuId: opt.skuNo,
-      specId: opt.skuNo,   // ✅ same as skuId — used for merge with parsebird
+      specId: opt.skuNo,
     });
   }
 
@@ -196,7 +211,7 @@ function parseOptions(options: RawOption[]): {
 }
 
 // =============================================
-// Actor call — sends BOTH casing variants of the field name
+// Actor call
 // =============================================
 
 async function callPizani(
@@ -229,42 +244,58 @@ async function callPizani(
 }
 
 // =============================================
-// Price resolution — 3-tier fallback
+// ✅ Price resolution — MOQ × USD/CNY detection
 // =============================================
 
 function resolvePriceCny(p: RawProductInfo, offerId: string): number {
-  // Tier 1: priceCNY field (normal case)
+  const moq = p.minOrderQuantity || 1;
   let minCny = Number(p.priceCNY) || 0;
+
+  // If priceCNY looks like USD (< 15) AND MOQ is small → it's USD mislabeled
+  if (minCny > 0 && minCny < 15 && moq === 1) {
+    const derivedCny = minCny / DEFAULT_PRICING.cnyToUsd;
+    console.warn(
+      `[pizani] ${offerId} priceCNY=${minCny} looks like USD — converting to ¥${derivedCny.toFixed(2)} CNY`
+    );
+    minCny = derivedCny;
+  }
+
+  // Multiply by MOQ — this is the REAL per-order price
+  if (minCny > 0 && moq > 1) {
+    const effective = minCny * moq;
+    console.warn(
+      `[pizani] ${offerId} priceCNY=${minCny} × MOQ ${moq} = ¥${effective.toFixed(2)}`
+    );
+    minCny = effective;
+  }
+
   if (minCny > 0) return minCny;
 
-  // Tier 2: price field (usually USD string like "8.86")
+  // Fallback: price field (USD)
   if (p.price) {
     const usd = Number(String(p.price).replace(/[^\d.]/g, ""));
     if (usd > 0) {
-      // invert cnyToUsd (0.14)
-      minCny = usd / DEFAULT_PRICING.cnyToUsd;
+      minCny = (usd / DEFAULT_PRICING.cnyToUsd) * moq;
       console.warn(
-        `[pizani] ${offerId} priceCNY was 0 — derived ${minCny.toFixed(2)} CNY from price=${p.price} USD`
+        `[pizani] ${offerId} priceCNY was 0 — derived ¥${minCny.toFixed(2)} from price=${p.price} USD × MOQ ${moq}`
       );
       return minCny;
     }
   }
 
-  // Tier 3: cheapest option variant
+  // Fallback: cheapest option
   const optionPrices = (p.options ?? [])
-    .map((o) => Number(o.priceCNY) || Number(o.price) || 0)
+    .map((o) => Number(o.priceCNY) || 0)
     .filter((n) => n > 0);
   if (optionPrices.length > 0) {
-    minCny = Math.min(...optionPrices);
+    minCny = Math.min(...optionPrices) * moq;
     console.warn(
-      `[pizani] ${offerId} priceCNY was 0 — using cheapest option ${minCny} CNY`
+      `[pizani] ${offerId} priceCNY was 0 — using cheapest option ¥${minCny} × MOQ ${moq}`
     );
     return minCny;
   }
 
-  console.warn(
-    `[pizani] ${offerId} no valid price (priceCNY=${p.priceCNY}, price=${p.price}, options=${p.options?.length ?? 0})`
-  );
+  console.warn(`[pizani] ${offerId} no valid price`);
   return 0;
 }
 
@@ -296,7 +327,6 @@ export async function fetchPizani1688(
 
   const p = first.productInfo;
 
-  // ✅ Debug log — see exactly what Pizani gave us
   console.log(
     `[pizani DEBUG] ${offerId} priceCNY=${JSON.stringify(p.priceCNY)} price=${JSON.stringify(p.price)} minOrder=${p.minOrderQuantity} options=${p.options?.length ?? 0}`
   );

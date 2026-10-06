@@ -40,3 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 data/products-1688.json
+serviceAccount.json 
+.env.local 
+serviceAccount.json 
+.env.local 
+.env.local   (already there probably)
+serviceAccount.json 
+.env.local 
+.env.local 
