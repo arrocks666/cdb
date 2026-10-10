@@ -84,7 +84,6 @@ export default function AdminOrderDetailPage({
         setOrder(data);
         setStatus(data.status);
 
-        // ✅ Load multi China IDs (migrate from legacy single)
         const loadedIds: string[] = Array.isArray(data.chinaOrderIds)
           ? data.chinaOrderIds.filter((x) => typeof x === "string")
           : data.chinaOrderId
@@ -145,7 +144,6 @@ export default function AdminOrderDetailPage({
     }
   };
 
-  // ✅ Multi China ID handlers
   const addChinaId = () => setChinaOrderIds((prev) => [...prev, ""]);
   const removeChinaId = (idx: number) =>
     setChinaOrderIds((prev) => {
@@ -158,12 +156,11 @@ export default function AdminOrderDetailPage({
   const handleSaveChina = async () => {
     setSavingChina(true);
     try {
-      // ✅ Clean up: trim, remove empties
       const cleaned = chinaOrderIds.map((x) => x.trim()).filter(Boolean);
 
       await updateDoc(doc(db, "orders", id), {
         chinaOrderIds: cleaned,
-        chinaOrderId: cleaned[0] ?? "", // keep legacy field synced
+        chinaOrderId: cleaned[0] ?? "",
         updatedAt: serverTimestamp(),
       });
 
@@ -513,7 +510,6 @@ export default function AdminOrderDetailPage({
         </div>
       </div>
 
-      {/* SHIPPING CHARGE OVERRIDE */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
           Shipping Charge
@@ -543,7 +539,6 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {/* PAYMENT */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
@@ -680,7 +675,6 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {/* CHARGES — ALWAYS VISIBLE */}
       <section className="mt-5 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-5 shadow-card-dark">
         <div className="mb-4">
           <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
@@ -693,7 +687,6 @@ export default function AdminOrderDetailPage({
         </div>
 
         <div className="space-y-4">
-          {/* China Local Courier */}
           <div className="rounded-lg border border-border-subtle bg-white p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
@@ -718,7 +711,6 @@ export default function AdminOrderDetailPage({
             />
           </div>
 
-          {/* BD Courier */}
           <div className="rounded-lg border border-border-subtle bg-white p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
@@ -743,7 +735,6 @@ export default function AdminOrderDetailPage({
             />
           </div>
 
-          {/* Shipping Charge (weight-based) */}
           <div className="rounded-lg border border-border-subtle bg-white p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-text-primary">
@@ -894,7 +885,6 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {/* ✅ MULTI CHINA ORDER IDs */}
       <section className="mt-5 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
         <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
           China Order IDs
@@ -1012,10 +1002,12 @@ export default function AdminOrderDetailPage({
                   <p className="truncate text-sm font-semibold text-text-primary">
                     {title}
                   </p>
+                  {/* ✅ Variant now shown */}
                   <p className="mt-0.5 text-xs text-text-muted">
                     {formatBDT(item.price)} × {item.quantity}
                     {item.colorLabel ? ` · ${item.colorLabel}` : ""}
                     {item.size ? ` · ${item.size}` : ""}
+                    {item.variant ? ` · ${item.variant}` : ""}
                   </p>
                 </div>
                 <span className="text-sm font-bold text-red-primary">

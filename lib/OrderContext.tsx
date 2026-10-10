@@ -42,6 +42,7 @@ export type OrderItem = {
   image?: string;
   adminPhoto?: string;
   isLive?: boolean;
+  variant?: string; // ✅ NEW — variant text (e.g. "Red / XL")
 };
 
 export type OrderPayment = {

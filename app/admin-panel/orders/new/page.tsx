@@ -22,6 +22,7 @@ type ManualItem = {
   price: number;
   quantity: number;
   image: string;
+  variant: string; // ✅ NEW
 };
 
 type SavedAddress = {
@@ -44,7 +45,6 @@ const PAYMENT_METHODS = [
   { id: "bank", label: "Bank Transfer" },
 ];
 
-// Normalize: strip +880 / 88 / spaces / dashes → 11-digit BD number
 function normalizePhone(input: string): string {
   const digits = input.replace(/\D/g, "");
   if (digits.startsWith("880") && digits.length === 13) {
@@ -73,7 +73,7 @@ export default function NewAdminOrderPage() {
   const [notes, setNotes] = useState("");
   const [shipping, setShipping] = useState(0);
   const [items, setItems] = useState<ManualItem[]>([
-    { title: "", price: 0, quantity: 1, image: "" },
+    { title: "", price: 0, quantity: 1, image: "", variant: "" },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,14 +107,13 @@ export default function NewAdminOrderPage() {
   const addItem = () =>
     setItems((prev) => [
       ...prev,
-      { title: "", price: 0, quantity: 1, image: "" },
+      { title: "", price: 0, quantity: 1, image: "", variant: "" },
     ]);
 
   const removeItem = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  // ✅ Lookup user — tries top-level phone first, then savedAddress.phone
   const lookupUser = async (rawPhone: string) => {
     const trimmed = rawPhone.trim();
     if (!trimmed) return;
@@ -132,7 +131,6 @@ export default function NewAdminOrderPage() {
     try {
       let found: { uid: string; data: any } | null = null;
 
-      // Try 1: top-level phone
       const q1 = query(
         collection(db, "users"),
         where("phone", "==", normalized),
@@ -143,7 +141,6 @@ export default function NewAdminOrderPage() {
         found = { uid: snap1.docs[0].id, data: snap1.docs[0].data() };
       }
 
-      // Try 2: savedAddress.phone
       if (!found) {
         const q2 = query(
           collection(db, "users"),
@@ -156,7 +153,6 @@ export default function NewAdminOrderPage() {
         }
       }
 
-      // Try 3: raw phone (in case number stored with +880 prefix)
       if (!found) {
         const q3 = query(
           collection(db, "users"),
@@ -189,12 +185,10 @@ export default function NewAdminOrderPage() {
       setFoundUser(user);
       setLookupError(null);
 
-      // ✅ Auto-fill ONLY empty fields
       if (!name.trim() && user.name) setName(user.name);
       if (!phone.trim() && savedAddress.phone) setPhone(savedAddress.phone);
       else if (!phone.trim() && user.phone) setPhone(user.phone);
 
-      // Skip fake @chinadailybazar.app emails
       if (
         !email.trim() &&
         user.email &&
@@ -217,7 +211,6 @@ export default function NewAdminOrderPage() {
     }
   };
 
-  // Auto-lookup on phone input
   useEffect(() => {
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
 
@@ -243,7 +236,6 @@ export default function NewAdminOrderPage() {
     lastQuery.current = "";
   };
 
-  // ---- Photo upload ----
   const handleUploadPhoto = async (
     idx: number,
     e: React.ChangeEvent<HTMLInputElement>
@@ -279,7 +271,6 @@ export default function NewAdminOrderPage() {
     }
   };
 
-  // ---- Image search ----
   const handleJobStarted = (jobId: string) => {
     setImageSearchJobId(jobId);
     setImageSearchResults([]);
@@ -348,6 +339,7 @@ export default function NewAdminOrderPage() {
         price: p.price,
         quantity: 1,
         image: p.image,
+        variant: "", // ✅ NEW — empty by default
       },
     ]);
   };
@@ -360,7 +352,6 @@ export default function NewAdminOrderPage() {
     };
   }, []);
 
-  // ---- Submit ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -398,6 +389,7 @@ export default function NewAdminOrderPage() {
           price: it.price,
           title: it.title,
           image: it.image || undefined,
+          variant: it.variant.trim() || undefined, // ✅ NEW
           isLive: false,
         })),
         subtotal,
@@ -704,8 +696,9 @@ export default function NewAdminOrderPage() {
                   </div>
                 </div>
 
+                {/* ✅ NEW LAYOUT — Price | Qty | Variant | Delete */}
                 <div className="mt-3 grid grid-cols-12 gap-2">
-                  <div className="col-span-5">
+                  <div className="col-span-3">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
                       Price (৳)
                     </label>
@@ -722,7 +715,7 @@ export default function NewAdminOrderPage() {
                       className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
                     />
                   </div>
-                  <div className="col-span-4">
+                  <div className="col-span-2">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
                       Qty
                     </label>
@@ -738,7 +731,21 @@ export default function NewAdminOrderPage() {
                       className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
                     />
                   </div>
-                  <div className="col-span-3 flex items-end">
+                  <div className="col-span-5">
+                    <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                      Variant
+                    </label>
+                    <input
+                      type="text"
+                      value={item.variant}
+                      onChange={(e) =>
+                        updateItem(idx, { variant: e.target.value })
+                      }
+                      placeholder="e.g. Red / XL, 64GB"
+                      className="w-full rounded border border-border-subtle bg-white px-2.5 py-2 text-sm focus:border-gold-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="col-span-2 flex items-end">
                     <button
                       type="button"
                       onClick={() => removeItem(idx)}
