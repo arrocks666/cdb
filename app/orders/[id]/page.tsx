@@ -8,10 +8,31 @@ import { useProducts } from "@/lib/ProductsContext";
 import { formatBDT } from "@/lib/data";
 import { getOrder as getOrderFromFirestore } from "@/lib/firestoreOrders";
 
-function OrderImage({ src }: { src: string }) {
+function OrderImage({
+  src,
+  onOpen,
+}: {
+  src: string;
+  onOpen: (src: string) => void;
+}) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) return <span className="text-xl">📦</span>;
-  return <img src={src} alt="" referrerPolicy="no-referrer" className="max-h-full max-w-full object-contain" onError={() => setFailed(true)} />;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(src)}
+      className="flex h-full w-full items-center justify-center transition hover:opacity-80"
+      aria-label="View full image"
+    >
+      <img
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </button>
+  );
 }
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +44,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const cachedOrder = orders.getOrder(id);
   const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
   const [fetching, setFetching] = useState(false);
+
+  // ✅ Full-screen image state
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   useEffect(() => {
     if (cachedOrder) return;
@@ -66,7 +90,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const currentIndex = STATUS_ORDER.indexOf(order.status);
   const createdDate = new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
-  // ✅ Customer-facing charge rows — always visible, values respect admin toggles
   const charges = order.charges ?? {};
 
   const chargeRows = [
@@ -166,7 +189,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               return (
                 <div key={i} className="flex items-center gap-3 border-b border-border-subtle pb-3 last:border-b-0 last:pb-0">
                   <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
-                    <OrderImage src={image} />
+                    <OrderImage src={image} onOpen={setFullscreenImage} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-text-primary md:text-base">{title}</p>
@@ -187,7 +210,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
-        {/* ✅ SHIPPING CHARGES — ALWAYS VISIBLE */}
         <div className="mt-3 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-4 shadow-card-dark md:p-5">
           <h2 className="mb-1 text-base font-bold text-text-primary md:text-lg">
             Additional Shipping Charges
@@ -237,7 +259,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
-        {/* PAYMENT SUMMARY (if any due) */}
         {(order.paidAmount ?? 0) > 0 && (
           <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
             <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Payment</h2>
@@ -258,6 +279,35 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         )}
       </div>
+
+      {/* ✅ FULL-SCREEN IMAGE MODAL */}
+      {fullscreenImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenImage(null);
+            }}
+            aria-label="Close"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/30"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <img
+            src={fullscreenImage}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

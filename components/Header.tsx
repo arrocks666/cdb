@@ -76,7 +76,9 @@ export default function Header() {
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
-  const logoUrl = settings.logoUrl;
+  // ✅ Use admin-uploaded logo, fallback to CDN logo
+  const logoUrl =
+    settings.logoUrl || "https://i.ibb.co/qMzydfQC/logo.jpg";
 
   return (
     <>

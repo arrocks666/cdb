@@ -22,7 +22,6 @@ const playfair = Playfair_Display({
   display: "swap",
 });
 
-// ✅ Final domain
 const SITE_URL = "https://chinadailybazar.com";
 
 export const metadata: Metadata = {
@@ -41,11 +40,20 @@ export const metadata: Metadata = {
     "1688 wholesale Bangladesh",
   ],
 
+  // ✅ Uses the full favicon package from favicon.io
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/apple-icon.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { url: "/android-chrome-192x192.png", type: "image/png", sizes: "192x192" },
+      { url: "/android-chrome-512x512.png", type: "image/png", sizes: "512x512" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
+
+  manifest: "/site.webmanifest",
 
   openGraph: {
     type: "website",
