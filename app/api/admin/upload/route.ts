@@ -7,11 +7,41 @@ export const maxDuration = 60;
 
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
 
-/**
- * POST /api/admin/upload
- * Body: FormData with "image" file
- * Returns: { url: string }
- */
+async function uploadToImgBB(file: File): Promise<{ url: string; thumb?: string }> {
+  const imgbbForm = new FormData();
+  imgbbForm.append("image", file);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30s
+
+  try {
+    const res = await fetch(
+      `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`,
+      {
+        method: "POST",
+        body: imgbbForm,
+        signal: controller.signal,
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data?.data?.url) {
+      const msg =
+        data?.error?.message ||
+        `ImgBB returned status ${res.status}`;
+      throw new Error(msg);
+    }
+
+    return {
+      url: data.data.url as string,
+      thumb: data.data.thumb?.url as string | undefined,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = await cookies();
@@ -41,32 +71,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build ImgBB request
-    const imgbbForm = new FormData();
-    imgbbForm.append("image", file);
+    // Try up to 2 times with a small delay between attempts
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await uploadToImgBB(file);
+        return Response.json(result);
+      } catch (err: any) {
+        lastError = err;
+        console.error(`ImgBB upload attempt ${attempt} failed:`, err.message);
 
-    const res = await fetch(
-      `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`,
-      {
-        method: "POST",
-        body: imgbbForm,
+        // If it's a timeout/network issue, wait 1s and retry
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok || !data?.data?.url) {
-      console.error("ImgBB upload failed:", data);
-      return Response.json(
-        { error: data?.error?.message || "ImgBB upload failed" },
-        { status: 500 }
-      );
     }
 
-    return Response.json({
-      url: data.data.url as string,
-      thumb: data.data.thumb?.url as string | undefined,
-    });
+    return Response.json(
+      { error: lastError?.message ?? "Upload failed after retries" },
+      { status: 500 }
+    );
   } catch (err: any) {
     console.error("Upload error:", err);
     return Response.json(

@@ -43,6 +43,13 @@ export default function AdminOrderDetailPage({
   const [chinaOrderIds, setChinaOrderIds] = useState<string[]>([""]);
   const [adminNotes, setAdminNotes] = useState("");
 
+  // ✅ NEW — status notes (one per status)
+  const [statusNotes, setStatusNotes] = useState<{ [k: string]: string }>({});
+  const [savingNote, setSavingNote] = useState<string | null>(null);
+
+  // ✅ NEW — full-screen image
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+
   const [shippingOverride, setShippingOverride] = useState<string>("");
   const [savingShipping, setSavingShipping] = useState(false);
 
@@ -83,6 +90,7 @@ export default function AdminOrderDetailPage({
         const data = { id: snap.id, ...(snap.data() as Omit<Order, "id">) };
         setOrder(data);
         setStatus(data.status);
+        setStatusNotes(data.statusNotes ?? {});
 
         const loadedIds: string[] = Array.isArray(data.chinaOrderIds)
           ? data.chinaOrderIds.filter((x) => typeof x === "string")
@@ -141,6 +149,34 @@ export default function AdminOrderDetailPage({
       showToast("Failed to update status");
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  // ✅ NEW — save a note for one status
+  const handleSaveStatusNote = async (s: string) => {
+    setSavingNote(s);
+    try {
+      const note = (statusNotes[s] ?? "").trim();
+      const nextNotes = { ...statusNotes };
+      if (note) {
+        nextNotes[s] = note;
+      } else {
+        delete nextNotes[s];
+      }
+
+      await updateDoc(doc(db, "orders", id), {
+        statusNotes: nextNotes,
+        updatedAt: serverTimestamp(),
+      });
+
+      setStatusNotes(nextNotes);
+      if (order) setOrder({ ...order, statusNotes: nextNotes });
+      showToast(`Note saved for ${STATUS_LABELS[s as OrderStatus]}`);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to save note");
+    } finally {
+      setSavingNote(null);
     }
   };
 
@@ -826,38 +862,71 @@ export default function AdminOrderDetailPage({
           ● {STATUS_LABELS[status]}
         </div>
 
-        <div className="mb-5 space-y-1">
+        {/* ✅ NEW — timeline with per-status notes */}
+        <div className="mb-5 space-y-3">
           {STATUS_ORDER.map((s, i) => {
             const isDone = i < currentStatusIdx;
             const isCurrent = i === currentStatusIdx;
+            const currentNote = statusNotes[s] ?? "";
+            const isSavingThis = savingNote === s;
             return (
-              <div key={s} className="flex items-center gap-2 text-xs md:text-sm">
-                <span
-                  className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
-                    isDone
-                      ? "border-success bg-success text-white"
-                      : isCurrent
-                      ? "border-gold-primary bg-gold-primary text-white"
-                      : "border-border-subtle bg-white"
-                  }`}
-                >
-                  {isDone && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </span>
-                <span
-                  className={
-                    isDone
-                      ? "text-success"
-                      : isCurrent
-                      ? "font-semibold text-gold-primary"
-                      : "text-text-muted"
-                  }
-                >
-                  {STATUS_LABELS[s]}
-                </span>
+              <div
+                key={s}
+                className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-input p-3 md:flex-row md:items-start md:gap-3"
+              >
+                <div className="flex items-center gap-2 md:flex-1">
+                  <span
+                    className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                      isDone
+                        ? "border-success bg-success text-white"
+                        : isCurrent
+                        ? "border-gold-primary bg-gold-primary text-white"
+                        : "border-border-subtle bg-white"
+                    }`}
+                  >
+                    {isDone && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </span>
+                  <span
+                    className={`text-xs md:text-sm ${
+                      isDone
+                        ? "text-success"
+                        : isCurrent
+                        ? "font-semibold text-gold-primary"
+                        : "text-text-muted"
+                    }`}
+                  >
+                    {STATUS_LABELS[s]}
+                  </span>
+                </div>
+
+                <div className="flex flex-1 items-center gap-2">
+                  <input
+                    type="text"
+                    value={currentNote}
+                    onChange={(e) =>
+                      setStatusNotes((prev) => ({
+                        ...prev,
+                        [s]: e.target.value,
+                      }))
+                    }
+                    placeholder="Add note visible to customer..."
+                    className="flex-1 rounded border border-border-subtle bg-white px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none md:text-sm"
+                  />
+                  <button
+                    onClick={() => handleSaveStatusNote(s)}
+                    disabled={
+                      isSavingThis ||
+                      (currentNote.trim() ?? "") === (order.statusNotes?.[s] ?? "")
+                    }
+                    className="flex-shrink-0 rounded border border-gold-primary bg-white px-3 py-1.5 text-[11px] font-semibold text-gold-primary transition hover:bg-bg-orange disabled:opacity-30 md:text-xs"
+                  >
+                    {isSavingThis ? "..." : "Save"}
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -986,7 +1055,16 @@ export default function AdminOrderDetailPage({
                 key={i}
                 className="flex items-center gap-3 border-b border-border-subtle pb-3 last:border-b-0 last:pb-0"
               >
-                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-bg-input">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (item.image) setFullscreenImage(item.image);
+                  }}
+                  className={`flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-bg-input ${
+                    item.image ? "cursor-pointer hover:opacity-80" : ""
+                  }`}
+                  aria-label="View image"
+                >
                   {item.image ? (
                     <img
                       src={item.image}
@@ -997,12 +1075,11 @@ export default function AdminOrderDetailPage({
                   ) : (
                     <span className="text-lg">📦</span>
                   )}
-                </div>
+                </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-text-primary">
                     {title}
                   </p>
-                  {/* ✅ Variant now shown */}
                   <p className="mt-0.5 text-xs text-text-muted">
                     {formatBDT(item.price)} × {item.quantity}
                     {item.colorLabel ? ` · ${item.colorLabel}` : ""}
@@ -1035,6 +1112,35 @@ export default function AdminOrderDetailPage({
           </div>
         </div>
       </section>
+
+      {/* ✅ FULL-SCREEN IMAGE MODAL */}
+      {fullscreenImage && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenImage(null);
+            }}
+            aria-label="Close"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/30"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <img
+            src={fullscreenImage}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="max-h-[90vh] max-w-[90vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

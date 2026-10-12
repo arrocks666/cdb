@@ -1,3 +1,6 @@
+// lib/OrderContext.tsx
+// Find the Order type and add the statusNotes field. Full file:
+
 "use client";
 
 import {
@@ -42,7 +45,7 @@ export type OrderItem = {
   image?: string;
   adminPhoto?: string;
   isLive?: boolean;
-  variant?: string; // ✅ NEW — variant text (e.g. "Red / XL")
+  variant?: string;
 };
 
 export type OrderPayment = {
@@ -92,13 +95,14 @@ export type Order = {
   paymentScreenshots?: string[];
   payments?: OrderPayment[];
 
-  // ✅ Legacy single China order id (kept for backward compat)
   chinaOrderId?: string;
-  // ✅ NEW — multiple China order ids
   chinaOrderIds?: string[];
 
   adminNotes?: string;
   statusUpdatedAt?: unknown;
+
+  // ✅ NEW — notes per tracking status, visible to customer
+  statusNotes?: { [status: string]: string };
 
   charges?: OrderCharges;
 };

@@ -44,8 +44,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const cachedOrder = orders.getOrder(id);
   const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
   const [fetching, setFetching] = useState(false);
-
-  // ✅ Full-screen image state
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -151,6 +149,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             {STATUS_ORDER.map((status, i) => {
               const isDone = i < currentIndex;
               const isCurrent = i === currentIndex;
+              const note = order.statusNotes?.[status];
               return (
                 <div key={status} className="relative flex gap-3 pb-5 last:pb-0">
                   {i < STATUS_ORDER.length - 1 && (
@@ -172,6 +171,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">
                       {isDone ? "Completed" : isCurrent ? "In progress" : "Pending"}
                     </p>
+                    {/* ✅ Admin note shown here */}
+                    {note && (
+                      <div className="mt-1.5 rounded border border-gold-primary/30 bg-bg-orange px-2 py-1.5 text-[11px] text-text-secondary md:text-xs">
+                        💬 {note}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -193,7 +198,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-text-primary md:text-base">{title}</p>
-                    <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">Qty {item.quantity}</p>
+                    <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">
+                      Qty {item.quantity}
+                      {item.variant ? ` · ${item.variant}` : ""}
+                    </p>
                   </div>
                   <span className="text-sm font-bold text-red-primary md:text-base">{formatBDT(item.price * item.quantity)}</span>
                 </div>
@@ -280,7 +288,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      {/* ✅ FULL-SCREEN IMAGE MODAL */}
       {fullscreenImage && (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"

@@ -247,8 +247,8 @@ export default function NewAdminOrderPage() {
       alert("Please select an image file");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image must be under 5MB");
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Image must be under 8MB. Please compress or resize.");
       return;
     }
 
@@ -264,7 +264,11 @@ export default function NewAdminOrderPage() {
       if (!res.ok) throw new Error(data.error || "Upload failed");
       updateItem(idx, { image: data.url });
     } catch (err: any) {
-      alert("Upload failed: " + err.message);
+      console.error("Upload failed:", err);
+      alert(
+        "Upload failed. Please try again.\n\n" +
+          (err?.message || "Unknown error")
+      );
     } finally {
       setUploadingIndex(null);
       e.target.value = "";
@@ -374,6 +378,24 @@ export default function NewAdminOrderPage() {
       const paymentLabel =
         PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD";
 
+      // ✅ FIX: only include optional fields when they actually have a value.
+      // Firestore rejects `undefined` — so we omit the key entirely instead.
+      const mappedItems = items.map((it) => {
+        const base: Record<string, unknown> = {
+          productId: `manual-${it.title.slice(0, 20)}`,
+          colorId: "default",
+          quantity: it.quantity,
+          price: it.price,
+          title: it.title,
+          isLive: false,
+        };
+        const img = (it.image ?? "").trim();
+        const vr = (it.variant ?? "").trim();
+        if (img) base.image = img;
+        if (vr) base.variant = vr;
+        return base;
+      });
+
       const orderDoc: Record<string, unknown> = {
         id: orderId,
         userId: foundUser?.uid ?? "admin-manual",
@@ -382,16 +404,7 @@ export default function NewAdminOrderPage() {
         createdAtServer: serverTimestamp(),
         status: "placed",
         statusUpdatedAt: serverTimestamp(),
-        items: items.map((it) => ({
-          productId: `manual-${it.title.slice(0, 20)}`,
-          colorId: "default",
-          quantity: it.quantity,
-          price: it.price,
-          title: it.title,
-          image: it.image || undefined,
-          variant: it.variant.trim() || undefined, // ✅ NEW
-          isLive: false,
-        })),
+        items: mappedItems,
         subtotal,
         shipping: shipping || 0,
         total,
@@ -645,13 +658,13 @@ export default function NewAdminOrderPage() {
                       type="file"
                       accept="image/*"
                       id={`item-photo-${idx}`}
-                      className="hidden"
+                      className="sr-only"
                       onChange={(e) => handleUploadPhoto(idx, e)}
                       disabled={uploadingIndex === idx}
                     />
                     <label
                       htmlFor={`item-photo-${idx}`}
-                      className={`flex h-20 w-20 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed transition ${
+                      className={`relative flex h-20 w-20 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border-2 border-dashed transition ${
                         item.image
                           ? "border-success bg-white"
                           : "border-border-subtle bg-white hover:border-gold-primary"
