@@ -46,13 +46,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [fetching, setFetching] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
+  // Always re-fetch from Firestore so we get the latest data
+  // (admin may have added statusNotes, updated payment, etc.)
   useEffect(() => {
-    if (cachedOrder) return;
     let cancelled = false;
     setFetching(true);
     getOrderFromFirestore(id)
       .then((o) => {
         if (!cancelled && o) setFetchedOrder(o as Order);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch order:", err);
       })
       .finally(() => {
         if (!cancelled) setFetching(false);
@@ -60,10 +64,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, cachedOrder]);
+  }, [id]);
 
-  const order = cachedOrder ?? fetchedOrder;
+  // Prefer the fresh Firestore copy; fall back to cache while loading
+  const order = fetchedOrder ?? cachedOrder;
 
   if (fetching && !order) {
     return (
