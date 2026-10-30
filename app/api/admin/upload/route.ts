@@ -27,14 +27,13 @@ async function uploadToImgBB(file: File): Promise<{ url: string; thumb?: string 
     const data = await res.json();
 
     if (!res.ok || !data?.data?.url) {
-      const msg =
-        data?.error?.message ||
-        `ImgBB returned status ${res.status}`;
+      const msg = data?.error?.message || `ImgBB returned status ${res.status}`;
       throw new Error(msg);
     }
 
+    // ✅ THIS IS THE FIX: We return the exact "url" (i.ibb.co), NOT display_url.
     return {
-      url: data.data.url as string,
+      url: data.data.url as string, 
       thumb: data.data.thumb?.url as string | undefined,
     };
   } finally {

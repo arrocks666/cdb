@@ -66,14 +66,14 @@ export default function AdminUsersPage() {
     }
   };
 
-  // ✅ NEW — reset password via API
+  // ✅ UPDATED — send both phone and email to API
   const handleResetPassword = async (user: AdminUser) => {
     if (!newPassword || newPassword.length < 6) {
       setResetError("Password must be at least 6 characters");
       return;
     }
-    if (!user.phone) {
-      setResetError("This user has no phone number on file");
+    if (!user.phone && !user.email) {
+      setResetError("This user has no phone number or email on file");
       return;
     }
 
@@ -83,7 +83,11 @@ export default function AdminUsersPage() {
       const res = await fetch("/api/admin/set-user-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: user.phone, newPassword }),
+        body: JSON.stringify({ 
+          phone: user.phone, 
+          email: user.email, 
+          newPassword 
+        }),
       });
       const data = await res.json();
 
@@ -92,7 +96,7 @@ export default function AdminUsersPage() {
         return;
       }
 
-      showToast(`✅ Password reset for ${data.phone}`);
+      showToast(`✅ Password reset successful`);
       setNewPassword("");
       setOpenResetFor(null);
     } catch (err: any) {

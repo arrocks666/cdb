@@ -16,13 +16,17 @@ import { db } from "@/lib/firebase";
 import { formatBDT } from "@/lib/adminOrders";
 import ImageSearchModal from "@/components/ImageSearchModal";
 import { LiveProduct } from "@/lib/liveProduct";
+import { OrderService, Order } from "@/lib/OrderContext";
+import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
+// ✅ NEW: Import email function
+import { sendOrderEmail } from "@/lib/sendEmail";
 
 type ManualItem = {
   title: string;
   price: number;
   quantity: number;
   image: string;
-  variant: string; // ✅ NEW
+  variant: string;
 };
 
 type SavedAddress = {
@@ -30,6 +34,7 @@ type SavedAddress = {
   phone?: string;
   address?: string;
   district?: string;
+  email?: string;
 };
 
 type FoundUser = {
@@ -64,6 +69,8 @@ async function generateUniqueOrderId(): Promise<string> {
 export default function NewAdminOrderPage() {
   const router = useRouter();
 
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -75,6 +82,8 @@ export default function NewAdminOrderPage() {
   const [items, setItems] = useState<ManualItem[]>([
     { title: "", price: 0, quantity: 1, image: "", variant: "" },
   ]);
+  const [selectedServices, setSelectedServices] = useState<OrderService[]>([]);
+  
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
@@ -92,11 +101,22 @@ export default function NewAdminOrderPage() {
   const [imageSearchError, setImageSearchError] = useState<string | null>(null);
   const imageSearchPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Load prices from settings
+  const AVAILABLE_SERVICES: OrderService[] = [
+    { id: "video_inspection", name: "Video Inspection", price: settings.videoInspectionPrice ?? 180 },
+    { id: "basic_inspection", name: "General Inspection", price: settings.basicInspectionPrice ?? 50 },
+  ];
+
+  useEffect(() => {
+    loadSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const subtotal = items.reduce(
     (sum, it) => sum + (it.price || 0) * (it.quantity || 0),
     0
   );
-  const total = subtotal + (shipping || 0);
+  const servicesTotal = selectedServices.reduce((sum, s) => sum + s.price, 0);
+  const total = subtotal + (shipping || 0) + servicesTotal;
 
   const updateItem = (idx: number, patch: Partial<ManualItem>) => {
     setItems((prev) =>
@@ -112,6 +132,16 @@ export default function NewAdminOrderPage() {
 
   const removeItem = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleService = (service: OrderService) => {
+    setSelectedServices((prev) => {
+      const exists = prev.find((s) => s.id === service.id);
+      if (exists) {
+        return prev.filter((s) => s.id !== service.id);
+      }
+      return [...prev, service];
+    });
   };
 
   const lookupUser = async (rawPhone: string) => {
@@ -254,15 +284,26 @@ export default function NewAdminOrderPage() {
 
     setUploadingIndex(idx);
     try {
+      let finalFile = file;
+
+      // ✅ SMART LOGIC: Only convert if the file is NOT a JPG/JPEG
+      if (file.type !== "image/jpeg" && file.type !== "image/jpg") {
+        const { resizeImage } = await import("@/lib/resizeImage");
+        finalFile = await resizeImage(file, 1600, 0.85); 
+      }
+
       const fd = new FormData();
-      fd.append("image", file);
+      fd.append("image", finalFile);
+      
       const res = await fetch("/api/admin/upload", {
         method: "POST",
         body: fd,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Upload failed");
+      
       updateItem(idx, { image: data.url });
+      
     } catch (err: any) {
       console.error("Upload failed:", err);
       alert(
@@ -343,7 +384,7 @@ export default function NewAdminOrderPage() {
         price: p.price,
         quantity: 1,
         image: p.image,
-        variant: "", // ✅ NEW — empty by default
+        variant: "",
       },
     ]);
   };
@@ -363,6 +404,7 @@ export default function NewAdminOrderPage() {
     if (!name.trim()) return setError("Customer name is required");
     if (!phone.trim()) return setError("Customer phone is required");
     if (!address.trim()) return setError("Address is required");
+    if (!email.trim()) return setError("Email is required for order tracking");
     if (items.length === 0) return setError("Add at least one item");
     if (items.some((it) => !it.title.trim())) {
       return setError("All items must have a name");
@@ -378,8 +420,6 @@ export default function NewAdminOrderPage() {
       const paymentLabel =
         PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD";
 
-      // ✅ FIX: only include optional fields when they actually have a value.
-      // Firestore rejects `undefined` — so we omit the key entirely instead.
       const mappedItems = items.map((it) => {
         const base: Record<string, unknown> = {
           productId: `manual-${it.title.slice(0, 20)}`,
@@ -417,15 +457,42 @@ export default function NewAdminOrderPage() {
           phone: phone.trim(),
           address: address.trim(),
           district: district.trim(),
+          email: email.trim(), // ✅ Save email
         },
         adminNotes: notes.trim(),
       };
 
-      if (email.trim()) {
-        orderDoc.userEmail = email.trim();
+      if (selectedServices.length > 0) {
+        orderDoc.selectedServices = selectedServices;
       }
 
+      // 1. Save to Firebase
       await setDoc(doc(db, "orders", orderId), orderDoc);
+
+      // 2. Send Email Notification
+      const orderForEmail: Order = {
+        id: orderId,
+        userId: foundUser?.uid ?? "admin-manual",
+        userPhone: phone.trim(),
+        createdAt: Date.now(),
+        items: mappedItems as any,
+        subtotal,
+        shipping: shipping || 0,
+        total,
+        paymentMethod: paymentLabel,
+        status: "placed",
+        address: {
+          name: name.trim(),
+          phone: phone.trim(),
+          address: address.trim(),
+          district: district.trim(),
+          email: email.trim(),
+        },
+        selectedServices: selectedServices,
+      };
+
+      sendOrderEmail(orderForEmail).catch(err => console.error("Email failed:", err));
+
       router.push(`/admin-panel/orders/${orderId}`);
     } catch (err: any) {
       console.error("Failed to create order:", err);
@@ -517,12 +584,18 @@ export default function NewAdminOrderPage() {
               placeholder="Customer's name"
             />
 
-            <Field
-              label="Email (optional)"
-              value={email}
-              onChange={setEmail}
-              placeholder="customer@example.com"
-            />
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                Email Address (For Order Tracking) *
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="customer@example.com"
+                className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+              />
+            </div>
 
             <div>
               <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
@@ -709,7 +782,6 @@ export default function NewAdminOrderPage() {
                   </div>
                 </div>
 
-                {/* ✅ NEW LAYOUT — Price | Qty | Variant | Delete */}
                 <div className="mt-3 grid grid-cols-12 gap-2">
                   <div className="col-span-3">
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-text-muted">
@@ -778,6 +850,39 @@ export default function NewAdminOrderPage() {
           </div>
         </section>
 
+        {/* VALUE ADDED SERVICES */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
+            Value Added Services
+          </h2>
+          <div className="space-y-2">
+            {AVAILABLE_SERVICES.map((service) => {
+              const isSelected = selectedServices.some(s => s.id === service.id);
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => toggleService(service)}
+                  className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                    isSelected ? "border-gold-primary bg-bg-orange" : "border-border-subtle bg-white hover:border-gold-primary"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-5 w-5 items-center justify-center rounded border ${isSelected ? "border-gold-primary bg-gold-primary text-white" : "border-border-subtle bg-white"}`}>
+                      {isSelected && <span className="text-[10px]">✓</span>}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-text-primary">{service.name}</p>
+                      <p className="text-[11px] text-text-muted">Reduce risk before shipping</p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-red-primary">{formatBDT(service.price)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Payment & Summary
@@ -820,6 +925,12 @@ export default function NewAdminOrderPage() {
               <span>Subtotal</span>
               <span className="text-text-primary">{formatBDT(subtotal)}</span>
             </div>
+            {selectedServices.length > 0 && (
+              <div className="flex justify-between text-text-secondary">
+                <span>Services</span>
+                <span className="text-text-primary">{formatBDT(servicesTotal)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-text-secondary">
               <span>Shipping</span>
               <span className="text-text-primary">

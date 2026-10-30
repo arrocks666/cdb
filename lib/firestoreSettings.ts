@@ -68,6 +68,10 @@ export type StoreSettings = {
   markupTiers: MarkupTier[];
 
   shippingDetailsBangla: string;
+  
+  // ✅ NEW - Inspection Prices
+  videoInspectionPrice: number;
+  basicInspectionPrice: number;
 
   updatedAt?: unknown;
 };
@@ -147,6 +151,10 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   markupTiers: DEFAULT_MARKUP_TIERS,
 
   shippingDetailsBangla: "",
+
+  // ✅ NEW Default Prices
+  videoInspectionPrice: 180,
+  basicInspectionPrice: 50,
 };
 
 const SETTINGS_DOC = ["settings", "general"] as const;

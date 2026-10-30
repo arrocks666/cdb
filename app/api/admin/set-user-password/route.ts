@@ -8,6 +8,7 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// Initialize Firebase Admin if not already initialized
 if (getApps().length === 0) {
   const serviceAccount = {
     projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
@@ -26,14 +27,15 @@ if (getApps().length === 0) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { phone, newPassword } = body as {
+    const { phone, email: realEmail, newPassword } = body as {
       phone?: string;
+      email?: string;
       newPassword?: string;
     };
 
-    if (!phone || !newPassword) {
+    if (!newPassword) {
       return Response.json(
-        { error: "Phone and newPassword required" },
+        { error: "New password required" },
         { status: 400 }
       );
     }
@@ -45,36 +47,76 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const digits = phone.replace(/\D/g, "");
-    let normalized = digits;
-    if (digits.startsWith("880") && digits.length === 13) {
-      normalized = "0" + digits.slice(3);
-    } else if (digits.startsWith("88") && digits.length === 13) {
-      normalized = "0" + digits.slice(3);
-    }
-
-    const email = `${normalized}@chinadailybazar.app`;
-
     const auth = getAuth();
+    let user: any = null;
 
-    try {
-      const user = await auth.getUserByEmail(email);
-      await auth.updateUser(user.uid, { password: newPassword });
-
-      return Response.json({
-        success: true,
-        uid: user.uid,
-        phone: normalized,
-      });
-    } catch (err: any) {
-      if (err.code === "auth/user-not-found") {
-        return Response.json(
-          { error: `No account found for phone ${normalized}` },
-          { status: 404 }
-        );
+    // --- STEP 1: Try generated email from phone ---
+    if (phone) {
+      const digits = phone.replace(/\D/g, "");
+      let normalized = digits;
+      if (digits.startsWith("880") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
+      } else if (digits.startsWith("88") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
       }
-      throw err;
+
+      const generatedEmail = `${normalized}@chinadailybazar.app`;
+      
+      try {
+        user = await auth.getUserByEmail(generatedEmail);
+        console.log(`[reset] Found by generated email: ${generatedEmail}`);
+      } catch (err: any) {
+        if (err.code !== "auth/user-not-found") {
+          console.error("[reset] Error looking up generated email:", err);
+        }
+        // User not found by generated email, moving to Step 2
+      }
     }
+
+    // --- STEP 2: Try real email (if provided) ---
+    if (!user && realEmail) {
+      try {
+        user = await auth.getUserByEmail(realEmail);
+        console.log(`[reset] Found by real email: ${realEmail}`);
+      } catch (err: any) {
+        if (err.code !== "auth/user-not-found") {
+          console.error("[reset] Error looking up real email:", err);
+        }
+      }
+    }
+
+    // --- STEP 3: Try phone number (fallback) ---
+    if (!user && phone) {
+      try {
+        user = await auth.getUserByPhoneNumber(phone);
+        console.log(`[reset] Found by phone: ${phone}`);
+      } catch (err: any) {
+        if (err.code !== "auth/user-not-found") {
+          console.error("[reset] Error looking up phone:", err);
+        }
+      }
+    }
+
+    // --- FINAL CHECK: If no user found after all 3 steps ---
+    if (!user) {
+      return Response.json(
+        { 
+          error: "User account not found in Auth. They may need to register on the site first.",
+          details: `Tried phone: ${phone}, email: ${realEmail}`
+        },
+        { status: 404 }
+      );
+    }
+
+    // --- SUCCESS: Update the password ---
+    await auth.updateUser(user.uid, { password: newPassword });
+
+    return Response.json({
+      success: true,
+      uid: user.uid,
+      message: `Password reset for ${user.email || user.phoneNumber || user.uid}`,
+    });
+
   } catch (err: any) {
     console.error("[set-user-password] error:", err);
     return Response.json(

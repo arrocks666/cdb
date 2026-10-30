@@ -84,6 +84,9 @@ export default function AdminSettingsPage() {
         logoUrl: settings.logoUrl,
         markupTiers: settings.markupTiers,
         shippingDetailsBangla: settings.shippingDetailsBangla,
+        // ✅ NEW Prices
+        videoInspectionPrice: settings.videoInspectionPrice,
+        basicInspectionPrice: settings.basicInspectionPrice,
       });
       showToast("Settings saved");
     } catch (err: any) {
@@ -327,6 +330,28 @@ export default function AdminSettingsPage() {
               ✓ Currently set to FREE — customers will see ৳0 shipping.
             </p>
           )}
+        </section>
+
+        {/* ✅ NEW: INSPECTION PRICES */}
+        <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
+          <h2 className="mb-1 font-serif text-base font-bold text-text-primary md:text-lg">
+            Inspection Services
+          </h2>
+          <p className="mb-4 text-xs text-text-muted">
+            Prices for Value Added Services at checkout.
+          </p>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <NumField
+              label="Video Inspection Price (৳)"
+              value={settings.videoInspectionPrice}
+              onChange={(v) => update("videoInspectionPrice", v)}
+            />
+            <NumField
+              label="Basic Inspection Price (৳)"
+              value={settings.basicInspectionPrice}
+              onChange={(v) => update("basicInspectionPrice", v)}
+            />
+          </div>
         </section>
 
         {/* MARKUP TIERS */}

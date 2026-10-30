@@ -36,7 +36,6 @@ export default function UserOrdersModal({ user, onClose }: Props) {
 
     (async () => {
       try {
-        // Fetch by userId
         const byUid = new Set<string>();
         const collected: Order[] = [];
 
@@ -55,7 +54,6 @@ export default function UserOrdersModal({ user, onClose }: Props) {
           console.warn("userId query failed:", e);
         }
 
-        // Also fetch by phone (catches manual orders)
         if (user.phone) {
           try {
             const q2 = query(
@@ -73,9 +71,7 @@ export default function UserOrdersModal({ user, onClose }: Props) {
           }
         }
 
-        // Sort merged list by createdAt desc
         collected.sort((a, b) => b.createdAt - a.createdAt);
-
         if (!cancelled) setOrders(collected);
       } catch (err) {
         console.error("Failed to load orders:", err);
@@ -91,13 +87,22 @@ export default function UserOrdersModal({ user, onClose }: Props) {
 
   if (!user) return null;
 
-  // Compute totals
+  // 1. Total Spent (Sum of all order totals)
   const totalSpent = orders.reduce((sum, o) => sum + o.total, 0);
+
+  // 2. Total Paid (Sum of all paid amounts)
   const totalPaid = orders.reduce(
     (sum, o) => sum + (o.paidAmount ?? o.total),
     0
   );
+
+  // 3. Total Due (Total Spent - Total Paid)
   const totalDue = Math.max(0, totalSpent - totalPaid);
+
+  // 4. ✅ NEW: New Orders Paid (Only sum the paid amounts of orders that have a due)
+  const newOrdersPaid = orders
+    .filter((o) => (o.paidAmount ?? o.total) < o.total) // Keep only orders with a due
+    .reduce((sum, o) => sum + (o.paidAmount ?? 0), 0); // Sum their paid amounts
 
   return (
     <div
@@ -131,8 +136,8 @@ export default function UserOrdersModal({ user, onClose }: Props) {
           </button>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-3 gap-2 border-b border-border-subtle bg-bg-input px-4 py-3 md:gap-3 md:px-5 md:py-4">
+        {/* Summary Boxes — Updated to 4 columns */}
+        <div className="grid grid-cols-2 gap-2 border-b border-border-subtle bg-bg-input px-4 py-3 md:grid-cols-4 md:gap-3 md:px-5 md:py-4">
           <div className="rounded-lg border border-border-subtle bg-white p-2.5 text-center md:p-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
               Total Spent
@@ -141,6 +146,7 @@ export default function UserOrdersModal({ user, onClose }: Props) {
               {formatBDT(totalSpent)}
             </p>
           </div>
+          
           <div className="rounded-lg border border-border-subtle bg-white p-2.5 text-center md:p-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
               Total Paid
@@ -149,6 +155,7 @@ export default function UserOrdersModal({ user, onClose }: Props) {
               {formatBDT(totalPaid)}
             </p>
           </div>
+          
           <div
             className={`rounded-lg border-2 p-2.5 text-center md:p-3 ${
               totalDue > 0
@@ -169,6 +176,16 @@ export default function UserOrdersModal({ user, onClose }: Props) {
               }`}
             >
               {formatBDT(totalDue)}
+            </p>
+          </div>
+
+          {/* ✅ NEW BOX */}
+          <div className="rounded-lg border-2 border-gold-primary bg-gold-primary/5 p-2.5 text-center md:p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gold-primary">
+              New Orders Paid
+            </p>
+            <p className="mt-1 text-sm font-bold text-gold-primary md:text-lg">
+              {formatBDT(newOrdersPaid)}
             </p>
           </div>
         </div>

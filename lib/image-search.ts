@@ -106,16 +106,38 @@ async function findListingsByBase64(
   const rawBase64 = toRawBase64(dataUrlOrBase64);
   if (!rawBase64) throw new Error("Invalid image data");
 
-  const input: Record<string, unknown> = {
-    imagesBase64: [rawBase64],
-    maxImages: 1,
-    maxResultsPerImage: ASK_FOR,
-  };
+  // 1. Upload to ImgBB first (takes ~2 seconds)
+  let imageUrl = "";
+  try {
+    const imgbbForm = new FormData();
+    const buffer = Buffer.from(rawBase64, "base64");
+    const blob = new Blob([buffer], { type: "image/jpeg" });
+    imgbbForm.append("image", blob, "search.jpg");
+
+    const imgbbRes = await fetch(
+      `https://api.imgbb.com/1/upload?key=${process.env.IMGBB_API_KEY}`,
+      { method: "POST", body: imgbbForm }
+    );
+    const imgbbData = await imgbbRes.json();
+    if (imgbbData.success) {
+      imageUrl = imgbbData.data.url;
+      console.log(`[image-search] Uploaded to ImgBB: ${imageUrl}`);
+    } else {
+      throw new Error("ImgBB upload failed");
+    }
+  } catch (err: any) {
+    console.warn(`[image-search] ImgBB failed, falling back to Base64`, err);
+  }
+
+  // 2. Send the URL to Apify (FAST) instead of Base64 (SLOW)
+  const input: Record<string, unknown> = imageUrl
+    ? { imageUrls: [imageUrl], maxImages: 1, maxResultsPerImage: ASK_FOR }
+    : { imagesBase64: [rawBase64], maxImages: 1, maxResultsPerImage: ASK_FOR };
 
   const url = `https://api.apify.com/v2/acts/${APIFY_IMAGE_SEARCH_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180`;
   const startedAt = Date.now();
   console.log(
-    `[image-search] POST actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (base64 size: ${rawBase64.length} chars)`
+    `[image-search] POST actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (URL=${!!imageUrl})`
   );
 
   const response = await fetch(url, {
@@ -459,6 +481,8 @@ export async function runImageSearchJob(
 
         if (detail) {
           const live = mergeToLive(detail, parsebirdData);
+          
+          // ✅ THIS IS THE MAGIC. It pushes to the UI the millisecond it finishes.
           pushProduct(jobId, live);
           savedProducts.push(live);
 

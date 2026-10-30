@@ -46,8 +46,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [fetching, setFetching] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  // Always re-fetch from Firestore so we get the latest data
-  // (admin may have added statusNotes, updated payment, etc.)
+  // Always re-fetch from Firestore so we get the latest data (like new payments or status)
   useEffect(() => {
     let cancelled = false;
     setFetching(true);
@@ -66,7 +65,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     };
   }, [id]);
 
-  // Prefer the fresh Firestore copy; fall back to cache while loading
   const order = fetchedOrder ?? cachedOrder;
 
   if (fetching && !order) {
@@ -115,6 +113,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     },
   ];
 
+  const payments = order.payments ?? [];
+  const totalPaid = order.paidAmount ?? 0;
+  const totalDue = Math.max(0, order.total - totalPaid);
+
   return (
     <div className="min-h-screen bg-bg-secondary">
       <div className="sticky top-[56px] z-40 border-b border-border-subtle bg-white shadow-sm md:top-[60px]">
@@ -147,6 +149,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
+        {/* Tracking Timeline */}
         <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
           <h2 className="mb-4 text-base font-bold text-text-primary md:text-lg">Tracking Timeline</h2>
           <div className="relative">
@@ -188,6 +191,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
+        {/* Order Items */}
         <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
           <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Order Items</h2>
           <div className="space-y-3">
@@ -212,8 +216,29 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               );
             })}
           </div>
+          
+          {order.selectedServices && order.selectedServices.length > 0 && (
+            <div className="mt-4 border-t border-border-subtle pt-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-text-muted">Services</h3>
+              <div className="mt-2 space-y-1">
+                {order.selectedServices.map((srv, i) => (
+                  <div key={i} className="flex justify-between text-sm text-text-secondary">
+                    <span>{srv.name}</span>
+                    <span className="font-semibold text-text-primary">{formatBDT(srv.price)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-3 text-xs md:text-sm">
             <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(order.subtotal)}</span></div>
+            {order.selectedServices && order.selectedServices.length > 0 && (
+              <div className="flex justify-between text-text-secondary">
+                <span>Services</span>
+                <span className="text-text-primary">{formatBDT(order.selectedServices.reduce((sum, s) => sum + s.price, 0))}</span>
+              </div>
+            )}
             <div className="flex justify-between text-text-secondary"><span>Shipping</span><span className="text-text-primary">{formatBDT(order.shipping)}</span></div>
             <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
               <span className="font-semibold text-text-primary md:text-base">Total</span>
@@ -222,6 +247,59 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
+        {/* Payment History */}
+        <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+          <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Payment History</h2>
+          
+          {payments.length === 0 ? (
+            <p className="text-xs text-text-muted md:text-sm">No payments recorded yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {payments.map((p, idx) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-success/15 text-[11px] font-bold text-success">
+                      {idx + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-text-primary">
+                        {idx === 0 ? "1st" : idx === 1 ? "2nd" : idx === 2 ? "3rd" : `${idx + 1}th`} Payment
+                      </p>
+                      <p className="text-[11px] text-text-muted">
+                        {new Date(p.date).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {p.note ? ` · ${p.note}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-success">
+                    {formatBDT(p.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-3 text-xs md:text-sm">
+            <div className="flex justify-between text-text-secondary">
+              <span>Total Paid</span>
+              <span className="font-semibold text-success">{formatBDT(totalPaid)}</span>
+            </div>
+            {totalDue > 0 && (
+              <div className="flex justify-between text-text-secondary">
+                <span>Remaining Due</span>
+                <span className="font-bold text-red-primary">{formatBDT(totalDue)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Additional Charges */}
         <div className="mt-3 rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-4 shadow-card-dark md:p-5">
           <h2 className="mb-1 text-base font-bold text-text-primary md:text-lg">
             Additional Shipping Charges
@@ -251,47 +329,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             ))}
           </div>
-
-          <div className="mt-3 rounded-lg border border-gold-primary/40 bg-white px-3 py-3 md:px-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-text-primary md:text-sm">
-                Total Extra Charges
-              </span>
-              <span className="text-base font-bold text-red-primary md:text-lg">
-                {formatBDT(
-                  chargeRows.reduce((sum, r) => {
-                    if (r.show && r.value != null && r.value > 0) {
-                      return sum + r.value;
-                    }
-                    return sum;
-                  }, 0)
-                )}
-              </span>
-            </div>
-          </div>
         </div>
-
-        {(order.paidAmount ?? 0) > 0 && (
-          <div className="mt-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-            <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Payment</h2>
-            <div className="space-y-1.5 text-xs md:text-sm">
-              <div className="flex justify-between text-text-secondary">
-                <span>Paid</span>
-                <span className="font-semibold text-success">
-                  {formatBDT(order.paidAmount ?? 0)}
-                </span>
-              </div>
-              <div className="flex justify-between text-text-secondary">
-                <span>Due</span>
-                <span className="font-semibold text-red-primary">
-                  {formatBDT(Math.max(0, order.total - (order.paidAmount ?? 0)))}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
+      {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"

@@ -25,6 +25,8 @@ import {
   DEFAULT_SETTINGS,
   type StoreSettings,
 } from "@/lib/firestoreSettings";
+// ✅ NEW: Import email functions
+import { sendStatusUpdateEmail, sendPaymentEmail } from "@/lib/sendEmail";
 
 export default function AdminOrderDetailPage({
   params,
@@ -43,11 +45,9 @@ export default function AdminOrderDetailPage({
   const [chinaOrderIds, setChinaOrderIds] = useState<string[]>([""]);
   const [adminNotes, setAdminNotes] = useState("");
 
-  // ✅ NEW — status notes (one per status)
   const [statusNotes, setStatusNotes] = useState<{ [k: string]: string }>({});
   const [savingNote, setSavingNote] = useState<string | null>(null);
 
-  // ✅ NEW — full-screen image
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const [shippingOverride, setShippingOverride] = useState<string>("");
@@ -142,8 +142,13 @@ export default function AdminOrderDetailPage({
         statusUpdatedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      if (order) setOrder({ ...order, status });
-      showToast("Status updated");
+      if (order) {
+        const updatedOrder = { ...order, status };
+        setOrder(updatedOrder);
+        // ✅ Send Email Notification
+        sendStatusUpdateEmail(updatedOrder, status).catch(console.error);
+      }
+      showToast("Status updated & Email sent");
     } catch (err) {
       console.error(err);
       showToast("Failed to update status");
@@ -152,7 +157,6 @@ export default function AdminOrderDetailPage({
     }
   };
 
-  // ✅ NEW — save a note for one status
   const handleSaveStatusNote = async (s: string) => {
     setSavingNote(s);
     try {
@@ -299,10 +303,14 @@ export default function AdminOrderDetailPage({
         updatedAt: serverTimestamp(),
       });
 
-      setOrder({ ...order, payments, paidAmount, dueAmount });
+      const updatedOrder = { ...order, payments, paidAmount, dueAmount };
+      setOrder(updatedOrder);
       setPaymentAmount("");
       setPaymentNote("");
-      showToast("Payment added");
+      
+      // ✅ Send Email Notification
+      sendPaymentEmail(updatedOrder, amount).catch(console.error);
+      showToast("Payment added & Email sent");
     } catch (err) {
       console.error(err);
       showToast("Failed to add payment");
@@ -362,8 +370,12 @@ export default function AdminOrderDetailPage({
         updatedAt: serverTimestamp(),
       });
 
-      setOrder({ ...order, payments, paidAmount, dueAmount });
-      showToast("Marked as fully paid");
+      const updatedOrder = { ...order, payments, paidAmount, dueAmount };
+      setOrder(updatedOrder);
+      
+      // ✅ Send Email Notification
+      sendPaymentEmail(updatedOrder, remainingDue).catch(console.error);
+      showToast("Marked as fully paid & Email sent");
     } catch (err) {
       console.error(err);
       showToast("Failed to update");
@@ -862,7 +874,6 @@ export default function AdminOrderDetailPage({
           ● {STATUS_LABELS[status]}
         </div>
 
-        {/* ✅ NEW — timeline with per-status notes */}
         <div className="mb-5 space-y-3">
           {STATUS_ORDER.map((s, i) => {
             const isDone = i < currentStatusIdx;
@@ -1036,6 +1047,7 @@ export default function AdminOrderDetailPage({
         <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
           <InfoRow label="Name" value={order.address?.name} />
           <InfoRow label="Phone" value={order.address?.phone} />
+          <InfoRow label="Email" value={order.address?.email} />
           <InfoRow label="Address" value={order.address?.address} className="md:col-span-2" />
           <InfoRow label="District" value={order.address?.district} />
           <InfoRow label="Payment" value={order.paymentMethod} />
@@ -1113,7 +1125,6 @@ export default function AdminOrderDetailPage({
         </div>
       </section>
 
-      {/* ✅ FULL-SCREEN IMAGE MODAL */}
       {fullscreenImage && (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"

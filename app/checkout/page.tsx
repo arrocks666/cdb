@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { formatBDT } from "@/lib/data";
 import { useProducts } from "@/lib/ProductsContext";
 import { useCart } from "@/lib/CartContext";
-import { useOrders } from "@/lib/OrderContext";
+import { useOrders, OrderService } from "@/lib/OrderContext";
 import { useAuth } from "@/lib/AuthContext";
 import LoginPromptModal from "@/components/LoginPromptModal";
 import {
@@ -63,6 +63,9 @@ function CheckoutContent() {
     address: "",
     district: "",
   });
+  
+  const [email, setEmail] = useState("");
+  const [selectedServices, setSelectedServices] = useState<OrderService[]>([]);
 
   const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([]);
   const [couponInput, setCouponInput] = useState("");
@@ -141,16 +144,44 @@ function CheckoutContent() {
   }, [cart.items, selectedKeys.join(","), products]);
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
-  // Shipping added later by admin — total = subtotal - discount
+  const servicesTotal = selectedServices.reduce((sum, s) => sum + s.price, 0);
   const shipping = 0;
   const discountAmount = appliedCoupon
     ? Math.min(appliedCoupon.amount, subtotal)
     : 0;
-  const total = subtotal - discountAmount;
+  
+  const total = subtotal - discountAmount + servicesTotal;
 
-  const paidAmount =
-    paidAmountInput === "" ? total : Number(paidAmountInput) || 0;
+  // ✅ FIXED: Default to 0, not total
+  const paidAmount = paidAmountInput === "" ? 0 : Number(paidAmountInput) || 0;
   const dueAmount = Math.max(0, total - paidAmount);
+
+  const AVAILABLE_SERVICES: OrderService[] = [
+    { id: "video_inspection", name: "Video Inspection", price: settings.videoInspectionPrice ?? 180 },
+    { id: "basic_inspection", name: "General Inspection", price: settings.basicInspectionPrice ?? 50 },
+  ];
+
+  const validateStep1 = () => {
+    if (
+      !address.name.trim() ||
+      !address.phone.trim() ||
+      !address.address.trim() ||
+      !address.district.trim() ||
+      !email.trim()
+    ) {
+      setError("Please fill all the information before proceeding.");
+      return false;
+    }
+    setError(null);
+    return true;
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep > 1) {
+      if (!validateStep1()) return;
+    }
+    setStep(targetStep);
+  };
 
   const handleApplyCoupon = (code: string) => {
     setCouponError(null);
@@ -177,12 +208,23 @@ function CheckoutContent() {
     }
   };
 
+  const toggleService = (service: OrderService) => {
+    setSelectedServices((prev) => {
+      const exists = prev.find((s) => s.id === service.id);
+      if (exists) {
+        return prev.filter((s) => s.id !== service.id);
+      }
+      return [...prev, service];
+    });
+  };
+
   const handlePlaceOrder = async () => {
     if (!user) {
       setLoginPromptOpen(true);
       return;
     }
 
+    if (!validateStep1()) return;
     if (rows.length === 0) return;
 
     if (payment === "bank" && !transactionId.trim() && paidAmount > 0) {
@@ -211,11 +253,15 @@ function CheckoutContent() {
         total,
         paymentMethod:
           PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
-        address,
+        address: {
+          ...address,
+          email: email.trim(),
+        },
         transactionId: transactionId.trim() || undefined,
         paidAmount,
         dueAmount,
         paymentScreenshots: [],
+        selectedServices: selectedServices,
       });
 
       if (appliedCoupon && user) {
@@ -272,11 +318,11 @@ function CheckoutContent() {
             </h1>
           </div>
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 pb-3">
-            <StepDot num={1} label="Address" active={step === 1} done={step > 1} onClick={() => setStep(1)} />
+            <StepDot num={1} label="Address" active={step === 1} done={step > 1} onClick={() => handleStepClick(1)} />
             <div className={`mx-2 h-0.5 flex-1 ${step > 1 ? "bg-gold-primary" : "bg-border-subtle"}`} />
-            <StepDot num={2} label="Payment" active={step === 2} done={step > 2} onClick={() => setStep(2)} />
+            <StepDot num={2} label="Payment" active={step === 2} done={step > 2} onClick={() => handleStepClick(2)} />
             <div className={`mx-2 h-0.5 flex-1 ${step > 2 ? "bg-gold-primary" : "bg-border-subtle"}`} />
-            <StepDot num={3} label="Confirm" active={step === 3} done={false} onClick={() => setStep(3)} />
+            <StepDot num={3} label="Confirm" active={step === 3} done={false} onClick={() => handleStepClick(3)} />
           </div>
         </div>
 
@@ -287,13 +333,36 @@ function CheckoutContent() {
                 Delivery Address
               </h2>
               <div className="space-y-3">
-                <Field label="Full Name" value={address.name} onChange={(v) => setAddress({ ...address, name: v })} placeholder="Enter your full name" />
-                <Field label="Phone Number" value={address.phone} onChange={(v) => setAddress({ ...address, phone: v })} placeholder="+880 1XXX XXXXXX" />
-                <Field label="Full Address" value={address.address} onChange={(v) => setAddress({ ...address, address: v })} placeholder="House, Road, Area" />
-                <Field label="District" value={address.district} onChange={(v) => setAddress({ ...address, district: v })} placeholder="e.g., Dhaka" />
+                <Field label="Full Name *" value={address.name} onChange={(v) => setAddress({ ...address, name: v })} placeholder="Enter your full name" />
+                <Field label="Phone Number *" value={address.phone} onChange={(v) => setAddress({ ...address, phone: v })} placeholder="+880 1XXX XXXXXX" />
+                <Field label="Full Address *" value={address.address} onChange={(v) => setAddress({ ...address, address: v })} placeholder="House, Road, Area" />
+                <Field label="District *" value={address.district} onChange={(v) => setAddress({ ...address, district: v })} placeholder="e.g., Dhaka" />
+                
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                    Email Address (For Order Updates) *
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                  />
+                  <p className="mt-1 text-[10px] text-text-muted">
+                    We will send your order tracking updates to this email.
+                  </p>
+                </div>
               </div>
+
+              {error && (
+                <div className="mt-4 rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">
+                  {error}
+                </div>
+              )}
+
               <button
-                onClick={() => setStep(2)}
+                onClick={() => handleStepClick(2)}
                 className="mt-5 w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow"
               >
                 Continue to Payment
@@ -356,13 +425,13 @@ function CheckoutContent() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => handleStepClick(1)}
                   className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary"
                 >
                   Back
                 </button>
                 <button
-                  onClick={() => setStep(3)}
+                  onClick={() => handleStepClick(3)}
                   className="flex-1 rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow"
                 >
                   Review Order
@@ -389,6 +458,11 @@ function CheckoutContent() {
                 <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
                   {address.district || "—"}
                 </p>
+                {email && (
+                  <p className="mt-2 inline-block rounded bg-success/10 px-2 py-1 text-xs font-medium text-success">
+                    Email: {email}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
@@ -418,6 +492,38 @@ function CheckoutContent() {
                       </span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* VALUE ADDED SERVICES */}
+              <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
+                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                  Value Added Services
+                </h2>
+                <div className="space-y-2">
+                  {AVAILABLE_SERVICES.map((service) => {
+                    const isSelected = selectedServices.some(s => s.id === service.id);
+                    return (
+                      <button
+                        key={service.id}
+                        onClick={() => toggleService(service)}
+                        className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                          isSelected ? "border-gold-primary bg-bg-orange" : "border-border-subtle bg-white hover:border-gold-primary"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-5 w-5 items-center justify-center rounded border ${isSelected ? "border-gold-primary bg-gold-primary text-white" : "border-border-subtle bg-white"}`}>
+                            {isSelected && <span className="text-[10px]">✓</span>}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-text-primary">{service.name}</p>
+                            <p className="text-[11px] text-text-muted">Reduce risk before shipping</p>
+                          </div>
+                        </div>
+                        <span className="text-sm font-bold text-red-primary">{formatBDT(service.price)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -554,6 +660,14 @@ function CheckoutContent() {
                     <span>Subtotal</span>
                     <span className="text-text-primary">{formatBDT(subtotal)}</span>
                   </div>
+                  
+                  {selectedServices.length > 0 && (
+                    <div className="flex justify-between text-text-secondary">
+                      <span>Services</span>
+                      <span className="text-text-primary">{formatBDT(servicesTotal)}</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-text-secondary">
                     <span>Shipping</span>
                     <span className="text-text-muted">—</span>
@@ -603,7 +717,7 @@ function CheckoutContent() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setStep(2)}
+                  onClick={() => handleStepClick(2)}
                   disabled={placing}
                   className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary disabled:opacity-40"
                 >
