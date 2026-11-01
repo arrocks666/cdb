@@ -15,6 +15,7 @@ export type SavedAddress = {
   phone?: string;
   address?: string;
   district?: string;
+  email?: string;
 };
 
 export async function getSavedPayments(uid: string): Promise<SavedPayments> {

@@ -46,7 +46,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [fetching, setFetching] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  // Always re-fetch from Firestore so we get the latest data (like new payments or status)
   useEffect(() => {
     let cancelled = false;
     setFetching(true);
@@ -178,7 +177,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">
                       {isDone ? "Completed" : isCurrent ? "In progress" : "Pending"}
                     </p>
-                    {/* ✅ Admin note shown here */}
                     {note && (
                       <div className="mt-1.5 rounded border border-gold-primary/30 bg-bg-orange px-2 py-1.5 text-[11px] text-text-secondary md:text-xs">
                         💬 {note}
@@ -233,12 +231,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
           <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-3 text-xs md:text-sm">
             <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(order.subtotal)}</span></div>
+            
+            {/* ✅ FIXED: Show individual services in subtotal */}
             {order.selectedServices && order.selectedServices.length > 0 && (
-              <div className="flex justify-between text-text-secondary">
-                <span>Services</span>
-                <span className="text-text-primary">{formatBDT(order.selectedServices.reduce((sum, s) => sum + s.price, 0))}</span>
+              <div className="flex flex-col gap-1 border-t border-border-subtle pt-2 mt-2">
+                {order.selectedServices.map((srv, idx) => (
+                  <div key={idx} className="flex justify-between text-text-secondary">
+                    <span>{srv.name}</span>
+                    <span className="text-text-primary">{formatBDT(srv.price)}</span>
+                  </div>
+                ))}
               </div>
             )}
+
             <div className="flex justify-between text-text-secondary"><span>Shipping</span><span className="text-text-primary">{formatBDT(order.shipping)}</span></div>
             <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
               <span className="font-semibold text-text-primary md:text-base">Total</span>
@@ -332,7 +337,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4"

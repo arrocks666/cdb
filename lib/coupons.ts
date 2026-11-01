@@ -38,6 +38,7 @@ type RawSavedAddress = {
   phone?: string;
   address?: string;
   district?: string;
+  email?: string; // ✅ NEW
 };
 
 function normalizeCoupon(raw: RawCoupon): Coupon | null {
@@ -176,11 +177,18 @@ export async function getAllUsers(): Promise<AdminUser[]> {
       // ✅ Prefer top-level name, fall back to savedAddress.name
       const resolvedName = data.name || savedAddress.name || undefined;
 
+      // ✅ NEW: prefer customer-entered email; ignore auth pseudo-email
+      const realEmail =
+        data.email && !data.email.endsWith("@chinadailybazar.app")
+          ? data.email
+          : undefined;
+      const resolvedEmail = savedAddress.email ?? realEmail ?? undefined;
+
       return {
         uid: d.id,
         phone: data.phone ?? savedAddress.phone ?? undefined,
         name: resolvedName,
-        email: data.email ?? undefined,
+        email: resolvedEmail, // ✅ NEW
         coupons: normalized,
         savedAddress,
       };

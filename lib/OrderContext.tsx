@@ -127,7 +127,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     
     await setDoc(ref, clean);
     
-    // ✅ Trigger the email
     sendOrderEmail(newOrder).catch((err) => console.error("❌ Email sending failed:", err));
     
     setOrders((prev) => [newOrder, ...prev]);

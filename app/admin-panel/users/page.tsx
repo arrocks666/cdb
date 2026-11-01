@@ -199,9 +199,15 @@ export default function AdminUsersPage() {
                       <p className="text-sm font-bold text-text-primary md:text-base">
                         {displayName}
                       </p>
-                      <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                                            <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
                         {u.phone || "No phone"}
                       </p>
+                      {/* ✅ NEW: Show email if it exists */}
+                      {(u.email || u.savedAddress?.email) && (
+                        <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                          ✉️ {u.email || u.savedAddress?.email}
+                        </p>
+                      )}
                       <p className="mt-0.5 truncate font-mono text-[10px] text-text-muted md:text-[11px]">
                         {u.uid}
                       </p>

@@ -1107,11 +1107,24 @@ export default function AdminOrderDetailPage({
           })}
         </div>
 
-        <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-4 text-sm">
+                <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-4 text-sm">
           <div className="flex justify-between text-text-secondary">
             <span>Subtotal</span>
             <span className="text-text-primary">{formatBDT(order.subtotal)}</span>
           </div>
+
+          {/* ✅ NEW: Show individual services in Admin View */}
+          {order.selectedServices && order.selectedServices.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-border-subtle pt-2 mt-2">
+              {order.selectedServices.map((srv, idx) => (
+                <div key={idx} className="flex justify-between text-text-secondary">
+                  <span>{srv.name}</span>
+                  <span className="text-text-primary">{formatBDT(srv.price)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex justify-between text-text-secondary">
             <span>Shipping</span>
             <span className="text-text-primary">{formatBDT(order.shipping)}</span>

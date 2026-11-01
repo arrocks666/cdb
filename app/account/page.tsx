@@ -348,6 +348,14 @@ export default function AccountPage() {
                           editing={editingAddress}
                           placeholder="e.g. Dhaka"
                         />
+                        {/* ✅ NEW: Email Field */}
+                        <InputField
+                          label="Email Address (For Order Updates)"
+                          value={address.email ?? ""}
+                          onChange={(v) => setAddress({ ...address, email: v })}
+                          editing={editingAddress}
+                          placeholder="you@example.com"
+                        />
                       </div>
 
                       {editingAddress && (
