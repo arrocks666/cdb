@@ -1,28 +1,10 @@
 // app/api/admin/set-user-password/route.ts
-// Admin-only — sets a user's password via Firebase Admin SDK.
-
 import { NextRequest } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-// Initialize Firebase Admin if not already initialized
-if (getApps().length === 0) {
-  const serviceAccount = {
-    projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-    privateKey: (process.env.FIREBASE_ADMIN_PRIVATE_KEY || "").replace(
-      /\\n/g,
-      "\n"
-    ),
-  };
-
-  initializeApp({
-    credential: cert(serviceAccount as any),
-  });
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,18 +15,29 @@ export async function POST(request: NextRequest) {
       newPassword?: string;
     };
 
-    if (!newPassword) {
-      return Response.json(
-        { error: "New password required" },
-        { status: 400 }
-      );
+    if (!newPassword || newPassword.length < 6) {
+      return Response.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
-    if (newPassword.length < 6) {
-      return Response.json(
-        { error: "Password must be at least 6 characters" },
-        { status: 400 }
-      );
+    // ✅ FIX: Safely initialize Firebase Admin and catch missing env variables
+    if (getApps().length === 0) {
+      if (!process.env.FIREBASE_ADMIN_PROJECT_ID || !process.env.FIREBASE_ADMIN_CLIENT_EMAIL || !process.env.FIREBASE_ADMIN_PRIVATE_KEY) {
+        console.error("Missing Firebase Admin Environment Variables");
+        return Response.json({ error: "Server configuration error: Missing Admin Keys." }, { status: 500 });
+      }
+
+      try {
+        initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
+          }),
+        });
+      } catch (initErr: any) {
+        console.error("Firebase Admin Init Error:", initErr);
+        return Response.json({ error: "Failed to initialize Firebase Admin." }, { status: 500 });
+      }
     }
 
     const auth = getAuth();
@@ -69,7 +62,6 @@ export async function POST(request: NextRequest) {
         if (err.code !== "auth/user-not-found") {
           console.error("[reset] Error looking up generated email:", err);
         }
-        // User not found by generated email, moving to Step 2
       }
     }
 
@@ -97,31 +89,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // --- FINAL CHECK: If no user found after all 3 steps ---
     if (!user) {
-      return Response.json(
-        { 
-          error: "User account not found in Auth. They may need to register on the site first.",
-          details: `Tried phone: ${phone}, email: ${realEmail}`
-        },
-        { status: 404 }
-      );
+      return Response.json({ error: "User account not found in Auth." }, { status: 404 });
     }
 
-    // --- SUCCESS: Update the password ---
+    // --- SUCCESS ---
     await auth.updateUser(user.uid, { password: newPassword });
 
     return Response.json({
       success: true,
-      uid: user.uid,
       message: `Password reset for ${user.email || user.phoneNumber || user.uid}`,
     });
 
   } catch (err: any) {
     console.error("[set-user-password] error:", err);
-    return Response.json(
-      { error: err?.message ?? "Server error" },
-      { status: 500 }
-    );
+    // ✅ FIX: Always return JSON so the frontend doesn't crash
+    return Response.json({ error: err?.message ?? "Server error" }, { status: 500 });
   }
 }

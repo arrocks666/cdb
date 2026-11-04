@@ -79,7 +79,10 @@ export async function sendOrderEmail(order: Order) {
     <table style="width: 100%; margin-top: 20px; font-size: 14px;">
       <tr><td style="color: #666;">Subtotal</td><td style="text-align: right; color: #333;">${formatBDT(order.subtotal)}</td></tr>
       ${order.selectedServices && order.selectedServices.length > 0 ? `<tr><td style="color: #666;">Services</td><td style="text-align: right; color: #333;">${formatBDT(order.selectedServices.reduce((sum, s) => sum + s.price, 0))}</td></tr>` : ''}
-      <tr><td style="color: #666;">Shipping</td><td style="text-align: right; color: #333;">${order.shipping > 0 ? formatBDT(order.shipping) : 'Free'}</td></tr>
+      
+      <!-- ✅ FIXED: Changed 'Free' to '---' -->
+      <tr><td style="color: #666;">Shipping</td><td style="text-align: right; color: #333;">${order.shipping > 0 ? formatBDT(order.shipping) : '---'}</td></tr>
+      
       <tr><td style="font-weight: bold; color: #333; padding-top: 10px; border-top: 2px solid #eee;">Total</td><td style="text-align: right; font-weight: bold; color: #D32F2F; font-size: 18px; padding-top: 10px; border-top: 2px solid #eee;">${formatBDT(order.total)}</td></tr>
     </table>
     <div style="margin-top: 30px; padding: 15px; background-color: #e8f5e9; border-radius: 6px; border: 1px solid #c8e6c9;">

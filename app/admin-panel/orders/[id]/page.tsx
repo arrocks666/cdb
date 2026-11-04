@@ -25,7 +25,6 @@ import {
   DEFAULT_SETTINGS,
   type StoreSettings,
 } from "@/lib/firestoreSettings";
-// ✅ NEW: Import email functions
 import { sendStatusUpdateEmail, sendPaymentEmail } from "@/lib/sendEmail";
 
 export default function AdminOrderDetailPage({
@@ -145,7 +144,6 @@ export default function AdminOrderDetailPage({
       if (order) {
         const updatedOrder = { ...order, status };
         setOrder(updatedOrder);
-        // ✅ Send Email Notification
         sendStatusUpdateEmail(updatedOrder, status).catch(console.error);
       }
       showToast("Status updated & Email sent");
@@ -308,7 +306,6 @@ export default function AdminOrderDetailPage({
       setPaymentAmount("");
       setPaymentNote("");
       
-      // ✅ Send Email Notification
       sendPaymentEmail(updatedOrder, amount).catch(console.error);
       showToast("Payment added & Email sent");
     } catch (err) {
@@ -373,7 +370,6 @@ export default function AdminOrderDetailPage({
       const updatedOrder = { ...order, payments, paidAmount, dueAmount };
       setOrder(updatedOrder);
       
-      // ✅ Send Email Notification
       sendPaymentEmail(updatedOrder, remainingDue).catch(console.error);
       showToast("Marked as fully paid & Email sent");
     } catch (err) {
@@ -1081,7 +1077,6 @@ export default function AdminOrderDetailPage({
                     <img
                       src={item.image}
                       alt=""
-                      referrerPolicy="no-referrer"
                       className="h-full w-full object-contain p-1"
                     />
                   ) : (
@@ -1107,13 +1102,12 @@ export default function AdminOrderDetailPage({
           })}
         </div>
 
-                <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-4 text-sm">
+        <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-4 text-sm">
           <div className="flex justify-between text-text-secondary">
             <span>Subtotal</span>
             <span className="text-text-primary">{formatBDT(order.subtotal)}</span>
           </div>
 
-          {/* ✅ NEW: Show individual services in Admin View */}
           {order.selectedServices && order.selectedServices.length > 0 && (
             <div className="flex flex-col gap-1 border-t border-border-subtle pt-2 mt-2">
               {order.selectedServices.map((srv, idx) => (
@@ -1159,7 +1153,6 @@ export default function AdminOrderDetailPage({
           <img
             src={fullscreenImage}
             alt=""
-            referrerPolicy="no-referrer"
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />

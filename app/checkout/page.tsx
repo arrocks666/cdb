@@ -152,7 +152,6 @@ function CheckoutContent() {
   
   const total = subtotal - discountAmount + servicesTotal;
 
-  // ✅ FIXED: Default to 0, not total
   const paidAmount = paidAmountInput === "" ? 0 : Number(paidAmountInput) || 0;
   const dueAmount = Math.max(0, total - paidAmount);
 

@@ -8,33 +8,6 @@ import { useProducts } from "@/lib/ProductsContext";
 import { formatBDT } from "@/lib/data";
 import { getOrder as getOrderFromFirestore } from "@/lib/firestoreOrders";
 
-function OrderImage({
-  src,
-  onOpen,
-}: {
-  src: string;
-  onOpen: (src: string) => void;
-}) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) return <span className="text-xl">📦</span>;
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(src)}
-      className="flex h-full w-full items-center justify-center transition hover:opacity-80"
-      aria-label="View full image"
-    >
-      <img
-        src={src}
-        alt=""
-        referrerPolicy="no-referrer"
-        className="max-h-full max-w-full object-contain"
-        onError={() => setFailed(true)}
-      />
-    </button>
-  );
-}
-
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -200,7 +173,17 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               return (
                 <div key={i} className="flex items-center gap-3 border-b border-border-subtle pb-3 last:border-b-0 last:pb-0">
                   <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
-                    <OrderImage src={image} onOpen={setFullscreenImage} />
+                    {image ? (
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenImage(image)}
+                        className="flex h-full w-full items-center justify-center transition hover:opacity-80"
+                      >
+                        <img src={image} alt="" className="max-h-full max-w-full object-contain" />
+                      </button>
+                    ) : (
+                      <span className="text-xl">📦</span>
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-text-primary md:text-base">{title}</p>
@@ -232,7 +215,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <div className="mt-4 space-y-1.5 border-t border-border-subtle pt-3 text-xs md:text-sm">
             <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(order.subtotal)}</span></div>
             
-            {/* ✅ FIXED: Show individual services in subtotal */}
             {order.selectedServices && order.selectedServices.length > 0 && (
               <div className="flex flex-col gap-1 border-t border-border-subtle pt-2 mt-2">
                 {order.selectedServices.map((srv, idx) => (
@@ -358,7 +340,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <img
             src={fullscreenImage}
             alt=""
-            referrerPolicy="no-referrer"
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
