@@ -18,7 +18,6 @@ import ImageSearchModal from "@/components/ImageSearchModal";
 import { LiveProduct } from "@/lib/liveProduct";
 import { OrderService, Order } from "@/lib/OrderContext";
 import { loadSettings, DEFAULT_SETTINGS, type StoreSettings } from "@/lib/firestoreSettings";
-// ✅ NEW: Import email function
 import { sendOrderEmail } from "@/lib/sendEmail";
 
 type ManualItem = {
@@ -50,6 +49,7 @@ const PAYMENT_METHODS = [
   { id: "bank", label: "Bank Transfer" },
 ];
 
+// ✅ FIX: Robust phone normalization (handles +880, 880, 01)
 function normalizePhone(input: string): string {
   const digits = input.replace(/\D/g, "");
   if (digits.startsWith("880") && digits.length === 13) {
@@ -88,11 +88,14 @@ export default function NewAdminOrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
+  // ✅ FIX: New User Lookup State
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null);
+  const [searchResults, setSearchResults] = useState<FoundUser[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
-  const [lookupError, setLookupError] = useState<string | null>(null);
-  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastQuery = useRef<string>("");
+  
+  // We use a ref to close the dropdown if the user clicks outside
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   const [imageSearchJobId, setImageSearchJobId] = useState<string | null>(null);
@@ -101,7 +104,6 @@ export default function NewAdminOrderPage() {
   const [imageSearchError, setImageSearchError] = useState<string | null>(null);
   const imageSearchPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load prices from settings
   const AVAILABLE_SERVICES: OrderService[] = [
     { id: "video_inspection", name: "Video Inspection", price: settings.videoInspectionPrice ?? 180 },
     { id: "basic_inspection", name: "General Inspection", price: settings.basicInspectionPrice ?? 50 },
@@ -109,6 +111,17 @@ export default function NewAdminOrderPage() {
 
   useEffect(() => {
     loadSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const subtotal = items.reduce(
@@ -144,126 +157,106 @@ export default function NewAdminOrderPage() {
     });
   };
 
-  const lookupUser = async (rawPhone: string) => {
-    const trimmed = rawPhone.trim();
-    if (!trimmed) return;
-
-    const normalized = normalizePhone(trimmed);
-    if (normalized.length < 11) return;
-
-    const queryKey = `phone:${normalized}`;
-    if (lastQuery.current === queryKey) return;
-    lastQuery.current = queryKey;
+  // ✅ FIX: The Unified User Search (Phone or Name)
+  const handleSearch = async (queryText: string) => {
+    if (!queryText.trim()) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
 
     setLookingUp(true);
-    setLookupError(null);
-
+    setShowDropdown(true);
+    const results: FoundUser[] = [];
+    
     try {
-      let found: { uid: string; data: any } | null = null;
-
-      const q1 = query(
-        collection(db, "users"),
-        where("phone", "==", normalized),
-        limit(1)
-      );
-      const snap1 = await getDocs(q1);
-      if (!snap1.empty) {
-        found = { uid: snap1.docs[0].id, data: snap1.docs[0].data() };
-      }
-
-      if (!found) {
-        const q2 = query(
+      // 1. Search by Phone (normalized)
+      const normalized = normalizePhone(queryText);
+      if (normalized.length >= 3) {
+        const qPhone = query(
           collection(db, "users"),
-          where("savedAddress.phone", "==", normalized),
-          limit(1)
+          where("phone", ">=", normalized),
+          where("phone", "<=", normalized + "\uf8ff"),
+          limit(5)
         );
-        const snap2 = await getDocs(q2);
-        if (!snap2.empty) {
-          found = { uid: snap2.docs[0].id, data: snap2.docs[0].data() };
-        }
+        const snapPhone = await getDocs(qPhone);
+        snapPhone.forEach((doc) => {
+          const data = doc.data();
+          results.push({
+            uid: doc.id,
+            name: data.name || data.savedAddress?.name || "",
+            phone: data.phone || data.savedAddress?.phone || "",
+            email: data.email || "",
+            savedAddress: data.savedAddress || {},
+          });
+        });
       }
 
-      if (!found) {
-        const q3 = query(
+      // 2. Search by Name (lowercase matching)
+      if (queryText.length >= 2) {
+        const qName = query(
           collection(db, "users"),
-          where("phone", "==", trimmed),
-          limit(1)
+          where("name", ">=", queryText),
+          where("name", "<=", queryText + "\uf8ff"),
+          limit(5)
         );
-        const snap3 = await getDocs(q3);
-        if (!snap3.empty) {
-          found = { uid: snap3.docs[0].id, data: snap3.docs[0].data() };
-        }
+        const snapName = await getDocs(qName);
+        snapName.forEach((doc) => {
+           const data = doc.data();
+           if (!results.find(u => u.uid === doc.id)) {
+             results.push({
+               uid: doc.id,
+               name: data.name || data.savedAddress?.name || "",
+               phone: data.phone || data.savedAddress?.phone || "",
+               email: data.email || "",
+               savedAddress: data.savedAddress || {},
+             });
+           }
+        });
       }
 
-      if (!found) {
-        setFoundUser(null);
-        setLookupError("এই ফোন নম্বর দিয়ে কোনো ইউজার পাওয়া যায়নি");
-        return;
-      }
-
-      const data = found.data;
-      const savedAddress: SavedAddress = data.savedAddress ?? {};
-
-      const user: FoundUser = {
-        uid: found.uid,
-        name: data.name ?? savedAddress.name ?? "",
-        phone: data.phone ?? "",
-        email: data.email ?? "",
-        savedAddress,
-      };
-
-      setFoundUser(user);
-      setLookupError(null);
-
-      if (!name.trim() && user.name) setName(user.name);
-      if (!phone.trim() && savedAddress.phone) setPhone(savedAddress.phone);
-      else if (!phone.trim() && user.phone) setPhone(user.phone);
-
-      if (
-        !email.trim() &&
-        user.email &&
-        !user.email.endsWith("@chinadailybazar.app")
-      ) {
-        setEmail(user.email);
-      }
-
-      if (!address.trim() && savedAddress.address) {
-        setAddress(savedAddress.address);
-      }
-      if (!district.trim() && savedAddress.district) {
-        setDistrict(savedAddress.district);
-      }
-    } catch (err: any) {
-      console.error("User lookup failed:", err);
-      setLookupError("লুকআপ ব্যর্থ হয়েছে");
+      setSearchResults(results.slice(0, 5));
+      if (results.length === 0) setShowDropdown(false);
+    } catch (err) {
+      console.error("Search failed:", err);
     } finally {
       setLookingUp(false);
     }
   };
 
+  // ✅ FIX: Debounce the search so it triggers as admin types
   useEffect(() => {
-    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    const timer = setTimeout(() => {
+      const searchTerm = phone.trim() || name.trim();
+      if (searchTerm.length >= 2) {
+        handleSearch(searchTerm);
+      }
+    }, 400); 
 
-    const trimmed = phone.trim();
-    if (!trimmed) return;
+    return () => clearTimeout(timer);
+  }, [phone, name]);
 
-    const normalized = normalizePhone(trimmed);
-    if (normalized.length < 11) return;
-
-    lookupTimer.current = setTimeout(() => {
-      lookupUser(trimmed);
-    }, 600);
-
-    return () => {
-      if (lookupTimer.current) clearTimeout(lookupTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phone]);
+  // ✅ FIX: Select a user from the dropdown
+  const selectUser = (user: FoundUser) => {
+    setFoundUser(user);
+    setShowDropdown(false);
+    
+    setName(user.name || "");
+    setPhone(user.phone || user.savedAddress?.phone || "");
+    setEmail(user.email || "");
+    setAddress(user.savedAddress?.address || "");
+    setDistrict(user.savedAddress?.district || "");
+  };
 
   const clearUser = () => {
     setFoundUser(null);
-    setLookupError(null);
-    lastQuery.current = "";
+    setSearchResults([]);
+    setShowDropdown(false);
+    setPhone("");
+    setName("");
+    setEmail("");
+    setAddress("");
+    setDistrict("");
   };
 
   const handleUploadPhoto = async (
@@ -286,8 +279,10 @@ export default function NewAdminOrderPage() {
     try {
       let finalFile = file;
 
-      // ✅ SMART LOGIC: Only convert if the file is NOT a JPG/JPEG
-      if (file.type !== "image/jpeg" && file.type !== "image/jpg") {
+      const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
+      const isSmall = file.size < 500 * 1024;
+
+      if (!isJpeg || !isSmall) {
         const { resizeImage } = await import("@/lib/resizeImage");
         finalFile = await resizeImage(file, 1600, 0.85); 
       }
@@ -322,9 +317,7 @@ export default function NewAdminOrderPage() {
     setImageSearchError(null);
     setImageSearchLoading(true);
 
-    if (imageSearchPollRef.current) {
-      clearInterval(imageSearchPollRef.current);
-    }
+    if (imageSearchPollRef.current) clearInterval(imageSearchPollRef.current);
 
     imageSearchPollRef.current = setInterval(async () => {
       try {
@@ -333,43 +326,25 @@ export default function NewAdminOrderPage() {
         const data = await res.json();
 
         const incoming: LiveProduct[] = data.products ?? [];
-        if (incoming.length > 0) {
-          setImageSearchResults(incoming);
-        }
+        if (incoming.length > 0) setImageSearchResults(incoming);
 
         if (data.status === "done") {
-          if (imageSearchPollRef.current) {
-            clearInterval(imageSearchPollRef.current);
-            imageSearchPollRef.current = null;
-          }
+          if (imageSearchPollRef.current) clearInterval(imageSearchPollRef.current);
           setImageSearchLoading(false);
           if (incoming.length === 0) {
-            setImageSearchError(
-              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
-            );
+            setImageSearchError("আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না।");
           }
         } else if (data.status === "error") {
-          if (imageSearchPollRef.current) {
-            clearInterval(imageSearchPollRef.current);
-            imageSearchPollRef.current = null;
-          }
+          if (imageSearchPollRef.current) clearInterval(imageSearchPollRef.current);
           setImageSearchLoading(false);
-          setImageSearchError(
-            data.error ||
-              "আপনার দেওয়া ছবির সাথে কোনো প্রোডাক্টের মিল পাওয়া যাচ্ছে না। অনুগ্রহ করে Alibaba থেকে প্রোডাক্টের ছবি নিয়ে আবার সার্চ করুন।"
-          );
+          setImageSearchError(data.error || "সার্চ ব্যর্থ হয়েছে।");
         }
-      } catch (err) {
-        console.warn("Poll error:", err);
-      }
+      } catch (err) { console.warn("Poll error:", err); }
     }, 2000);
   };
 
   const clearImageSearch = () => {
-    if (imageSearchPollRef.current) {
-      clearInterval(imageSearchPollRef.current);
-      imageSearchPollRef.current = null;
-    }
+    if (imageSearchPollRef.current) clearInterval(imageSearchPollRef.current);
     setImageSearchJobId(null);
     setImageSearchResults([]);
     setImageSearchError(null);
@@ -379,21 +354,13 @@ export default function NewAdminOrderPage() {
   const addProductFromImageSearch = (p: LiveProduct) => {
     setItems((prev) => [
       ...prev,
-      {
-        title: p.title,
-        price: p.price,
-        quantity: 1,
-        image: p.image,
-        variant: "",
-      },
+      { title: p.title, price: p.price, quantity: 1, image: p.image, variant: "" },
     ]);
   };
 
   useEffect(() => {
     return () => {
-      if (imageSearchPollRef.current) {
-        clearInterval(imageSearchPollRef.current);
-      }
+      if (imageSearchPollRef.current) clearInterval(imageSearchPollRef.current);
     };
   }, []);
 
@@ -417,8 +384,7 @@ export default function NewAdminOrderPage() {
 
     try {
       const orderId = await generateUniqueOrderId();
-      const paymentLabel =
-        PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD";
+      const paymentLabel = PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD";
 
       const mappedItems = items.map((it) => {
         const base: Record<string, unknown> = {
@@ -457,7 +423,7 @@ export default function NewAdminOrderPage() {
           phone: phone.trim(),
           address: address.trim(),
           district: district.trim(),
-          email: email.trim(), // ✅ Save email
+          email: email.trim(),
         },
         adminNotes: notes.trim(),
       };
@@ -466,10 +432,8 @@ export default function NewAdminOrderPage() {
         orderDoc.selectedServices = selectedServices;
       }
 
-      // 1. Save to Firebase
       await setDoc(doc(db, "orders", orderId), orderDoc);
 
-      // 2. Send Email Notification
       const orderForEmail: Order = {
         id: orderId,
         userId: foundUser?.uid ?? "admin-manual",
@@ -539,17 +503,51 @@ export default function NewAdminOrderPage() {
             )}
           </div>
 
-          <div className="space-y-3">
-            <Field
-              label="Phone Number *"
-              value={phone}
-              onChange={setPhone}
-              placeholder="01XXXXXXXXX or +8801XXXXXXXXX"
-            />
+          <div className="space-y-3 relative" ref={dropdownRef}>
+            
+            {/* ✅ FIX: Unified Search Bar (Phone or Name) */}
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                Search Customer (Type Name or Phone) *
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    if (foundUser) clearUser(); // Clear found user if they start typing again
+                  }}
+                  placeholder="01XXXXXXXXX or John Doe..."
+                  className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                />
+                
+                {lookingUp && (
+                  <div className="absolute right-3 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+                )}
 
-            {lookingUp && (
-              <p className="text-[11px] text-text-muted">Looking up user...</p>
-            )}
+                {/* ✅ FIX: Live Autocomplete Dropdown */}
+                {showDropdown && searchResults.length > 0 && !foundUser && (
+                  <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-border-subtle bg-white shadow-lg">
+                    {searchResults.map((u) => (
+                      <button
+                        key={u.uid}
+                        type="button"
+                        onClick={() => selectUser(u)}
+                        className="flex w-full flex-col border-b border-border-subtle px-3 py-2 text-left transition hover:bg-bg-orange last:border-b-0"
+                      >
+                        <span className="text-sm font-semibold text-text-primary">
+                          {u.name || "Unknown Name"}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {u.phone || "No phone"} • {u.email || "No email"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {foundUser && (
               <div className="flex items-center justify-between rounded-lg border border-success/30 bg-success/5 px-3 py-2">
@@ -557,8 +555,7 @@ export default function NewAdminOrderPage() {
                   <span className="font-semibold text-success">✓ Found: </span>
                   <span className="text-text-primary">
                     {foundUser.name || "—"}
-                    {foundUser.email &&
-                    !foundUser.email.endsWith("@chinadailybazar.app")
+                    {foundUser.email && !foundUser.email.endsWith("@chinadailybazar.app")
                       ? ` (${foundUser.email})`
                       : ""}
                   </span>
@@ -573,14 +570,13 @@ export default function NewAdminOrderPage() {
               </div>
             )}
 
-            {lookupError && !foundUser && (
-              <p className="text-[11px] text-text-muted">{lookupError}</p>
-            )}
-
             <Field
               label="Full Name *"
               value={name}
-              onChange={setName}
+              onChange={(v) => {
+                setName(v);
+                if (foundUser) clearUser(); // Clear if editing
+              }}
               placeholder="Customer's name"
             />
 

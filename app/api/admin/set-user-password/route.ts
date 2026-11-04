@@ -6,6 +6,23 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// ✅ FIX: Initialize Firebase Admin ONCE when the server starts.
+if (getApps().length === 0) {
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  
+  if (privateKey) {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        // ✅ CRITICAL FIX: Netlify stores the key as a single line with literal "\n" strings. 
+        // We must convert them to real line breaks here.
+        privateKey: privateKey.split("\\n").join("\n"),
+      }),
+    });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -22,35 +39,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ FIX: Safely initialize Firebase Admin inside the request
-    // This prevents the server from crashing and returning an empty response.
     if (getApps().length === 0) {
-      const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
-      
-      if (!process.env.FIREBASE_ADMIN_PROJECT_ID || !process.env.FIREBASE_ADMIN_CLIENT_EMAIL || !privateKey) {
-        console.error("Missing Firebase Admin Environment Variables");
-        return Response.json(
-          { error: "Server configuration error: Missing Admin Keys." },
-          { status: 500 }
-        );
-      }
-
-      try {
-        initializeApp({
-          credential: cert({
-            projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-            clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-            // ✅ FIX: Force newline conversion for Netlify's single-line env vars
-            privateKey: privateKey.replace(/\\n/g, "\n"),
-          }),
-        });
-      } catch (initErr: any) {
-        console.error("Firebase Admin Init Error:", initErr);
-        return Response.json(
-          { error: "Failed to initialize Firebase Admin. Check server logs." },
-          { status: 500 }
-        );
-      }
+      return Response.json(
+        { error: "Firebase Admin is not configured on the server." },
+        { status: 500 }
+      );
     }
 
     const auth = getAuth();
@@ -102,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // --- FINAL CHECK: If no user found after all 3 steps ---
+    // --- FINAL CHECK ---
     if (!user) {
       return Response.json(
         { 
@@ -113,7 +106,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- SUCCESS: Update the password ---
+    // --- SUCCESS ---
     await auth.updateUser(user.uid, { password: newPassword });
 
     return Response.json({
@@ -124,7 +117,6 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error("[set-user-password] error:", err);
-    // ✅ FIX: Always return JSON so the frontend doesn't crash with "Unexpected end of JSON input"
     return Response.json(
       { error: err?.message ?? "Server error" },
       { status: 500 }

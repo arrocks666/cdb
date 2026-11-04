@@ -1,6 +1,6 @@
 // lib/resizeImage.ts
 // Browser-side image resizing before upload.
-// Prevents "file too large" errors AND fixes PNG transparency issues.
+// Prevents "file too large" errors from phone/PC photos.
 
 /**
  * Resize an image File to a target maximum dimension.
@@ -14,8 +14,14 @@ export async function resizeImage(
   // SVG is vector — don't rasterize
   if (file.type === "image/svg+xml") return file;
 
-  // ❌ REMOVED THE "SKIP IF SMALL" LINE HERE
-  // We MUST process every file through the canvas to ensure it becomes a valid JPG.
+  // ✅ FIX: Skip processing ONLY if it's already a small JPG/JPEG.
+  // Small PNGs MUST be processed to fix the black box issue.
+  const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
+  const isSmall = file.size < 500 * 1024; // Increased to 500KB for better speed
+
+  if (isJpeg && isSmall) {
+    return file; // Returns instantly, no canvas processing needed
+  }
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -46,7 +52,7 @@ export async function resizeImage(
           return;
         }
 
-        // ✅ FIX: White background (PNG transparency → solid white)
+        // White background (PNG transparency → white)
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, width, height);
 
