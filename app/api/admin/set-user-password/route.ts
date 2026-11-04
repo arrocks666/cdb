@@ -16,14 +16,23 @@ export async function POST(request: NextRequest) {
     };
 
     if (!newPassword || newPassword.length < 6) {
-      return Response.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+      return Response.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
     }
 
-    // ✅ FIX: Safely initialize Firebase Admin and catch missing env variables
+    // ✅ FIX: Safely initialize Firebase Admin inside the request
+    // This prevents the server from crashing and returning an empty response.
     if (getApps().length === 0) {
-      if (!process.env.FIREBASE_ADMIN_PROJECT_ID || !process.env.FIREBASE_ADMIN_CLIENT_EMAIL || !process.env.FIREBASE_ADMIN_PRIVATE_KEY) {
+      const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+      
+      if (!process.env.FIREBASE_ADMIN_PROJECT_ID || !process.env.FIREBASE_ADMIN_CLIENT_EMAIL || !privateKey) {
         console.error("Missing Firebase Admin Environment Variables");
-        return Response.json({ error: "Server configuration error: Missing Admin Keys." }, { status: 500 });
+        return Response.json(
+          { error: "Server configuration error: Missing Admin Keys." },
+          { status: 500 }
+        );
       }
 
       try {
@@ -31,12 +40,16 @@ export async function POST(request: NextRequest) {
           credential: cert({
             projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
             clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n"),
+            // ✅ FIX: Force newline conversion for Netlify's single-line env vars
+            privateKey: privateKey.replace(/\\n/g, "\n"),
           }),
         });
       } catch (initErr: any) {
         console.error("Firebase Admin Init Error:", initErr);
-        return Response.json({ error: "Failed to initialize Firebase Admin." }, { status: 500 });
+        return Response.json(
+          { error: "Failed to initialize Firebase Admin. Check server logs." },
+          { status: 500 }
+        );
       }
     }
 
@@ -89,21 +102,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- FINAL CHECK: If no user found after all 3 steps ---
     if (!user) {
-      return Response.json({ error: "User account not found in Auth." }, { status: 404 });
+      return Response.json(
+        { 
+          error: "User account not found in Auth. They may need to register on the site first.",
+          details: `Tried phone: ${phone}, email: ${realEmail}`
+        },
+        { status: 404 }
+      );
     }
 
-    // --- SUCCESS ---
+    // --- SUCCESS: Update the password ---
     await auth.updateUser(user.uid, { password: newPassword });
 
     return Response.json({
       success: true,
+      uid: user.uid,
       message: `Password reset for ${user.email || user.phoneNumber || user.uid}`,
     });
 
   } catch (err: any) {
     console.error("[set-user-password] error:", err);
-    // ✅ FIX: Always return JSON so the frontend doesn't crash
-    return Response.json({ error: err?.message ?? "Server error" }, { status: 500 });
+    // ✅ FIX: Always return JSON so the frontend doesn't crash with "Unexpected end of JSON input"
+    return Response.json(
+      { error: err?.message ?? "Server error" },
+      { status: 500 }
+    );
   }
 }
