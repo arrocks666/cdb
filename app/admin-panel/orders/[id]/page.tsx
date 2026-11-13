@@ -1073,15 +1073,20 @@ export default function AdminOrderDetailPage({
                   }`}
                   aria-label="View image"
                 >
-                  {item.image ? (
+                   {item.image ? (
                     <img
                       src={item.image}
                       alt=""
+                      referrerPolicy="no-referrer" // ✅ Bypasses Alibaba block
                       className="h-full w-full object-contain p-1"
-                    />
-                  ) : (
+                      onError={(e) => {
+                        // ✅ Shows placeholder if the link is broken
+                        e.currentTarget.src = "https://placehold.co/100x100/f3f4f6/a1a1aa?text=No+Image";
+                      }}
+                     />
+                    ) : (
                     <span className="text-lg">📦</span>
-                  )}
+                    )}
                 </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-text-primary">
@@ -1153,6 +1158,7 @@ export default function AdminOrderDetailPage({
           <img
             src={fullscreenImage}
             alt=""
+            referrerPolicy="no-referrer" // ✅ Bypasses Alibaba block
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />

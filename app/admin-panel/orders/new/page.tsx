@@ -12,7 +12,8 @@ import {
   getDocs,
   limit,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // ✅ Firebase Storage
 import { formatBDT } from "@/lib/adminOrders";
 import ImageSearchModal from "@/components/ImageSearchModal";
 import { LiveProduct } from "@/lib/liveProduct";
@@ -49,18 +50,6 @@ const PAYMENT_METHODS = [
   { id: "bank", label: "Bank Transfer" },
 ];
 
-// ✅ FIX: Robust phone normalization (handles +880, 880, 01)
-function normalizePhone(input: string): string {
-  const digits = input.replace(/\D/g, "");
-  if (digits.startsWith("880") && digits.length === 13) {
-    return "0" + digits.slice(3);
-  }
-  if (digits.startsWith("88") && digits.length === 13) {
-    return "0" + digits.slice(3);
-  }
-  return digits;
-}
-
 async function generateUniqueOrderId(): Promise<string> {
   const id = String(Math.floor(100000 + Math.random() * 900000));
   return id;
@@ -88,13 +77,11 @@ export default function NewAdminOrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
-  // ✅ FIX: New User Lookup State
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null);
   const [searchResults, setSearchResults] = useState<FoundUser[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
   
-  // We use a ref to close the dropdown if the user clicks outside
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
@@ -113,7 +100,6 @@ export default function NewAdminOrderPage() {
     loadSettings().then(setSettings).catch(() => {});
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -157,7 +143,7 @@ export default function NewAdminOrderPage() {
     });
   };
 
-  // ✅ FIX: The Unified User Search (Phone or Name)
+  // ✅ FIX: Partial Phone Search (Ignores +, matches anywhere in the number)
   const handleSearch = async (queryText: string) => {
     if (!queryText.trim()) {
       setSearchResults([]);
@@ -170,52 +156,34 @@ export default function NewAdminOrderPage() {
     const results: FoundUser[] = [];
     
     try {
-      // 1. Search by Phone (normalized)
-      const normalized = normalizePhone(queryText);
-      if (normalized.length >= 3) {
-        const qPhone = query(
+      const rawDigits = queryText.replace(/\D/g, ""); // Remove +, spaces, dashes
+      
+      if (rawDigits.length >= 2) {
+        const q = query(
           collection(db, "users"),
-          where("phone", ">=", normalized),
-          where("phone", "<=", normalized + "\uf8ff"),
-          limit(5)
+          limit(100)
         );
-        const snapPhone = await getDocs(qPhone);
-        snapPhone.forEach((doc) => {
+        
+        const snap = await getDocs(q);
+        
+        snap.forEach((doc) => {
           const data = doc.data();
-          results.push({
-            uid: doc.id,
-            name: data.name || data.savedAddress?.name || "",
-            phone: data.phone || data.savedAddress?.phone || "",
-            email: data.email || "",
-            savedAddress: data.savedAddress || {},
-          });
+          const userPhone = data.phone || data.savedAddress?.phone || "";
+          const cleanDbPhone = userPhone.replace(/\D/g, "");
+          
+          if (cleanDbPhone.includes(rawDigits)) {
+            results.push({
+              uid: doc.id,
+              name: data.name || data.savedAddress?.name || "",
+              phone: userPhone,
+              email: data.email || "",
+              savedAddress: data.savedAddress || {},
+            });
+          }
         });
       }
 
-      // 2. Search by Name (lowercase matching)
-      if (queryText.length >= 2) {
-        const qName = query(
-          collection(db, "users"),
-          where("name", ">=", queryText),
-          where("name", "<=", queryText + "\uf8ff"),
-          limit(5)
-        );
-        const snapName = await getDocs(qName);
-        snapName.forEach((doc) => {
-           const data = doc.data();
-           if (!results.find(u => u.uid === doc.id)) {
-             results.push({
-               uid: doc.id,
-               name: data.name || data.savedAddress?.name || "",
-               phone: data.phone || data.savedAddress?.phone || "",
-               email: data.email || "",
-               savedAddress: data.savedAddress || {},
-             });
-           }
-        });
-      }
-
-      setSearchResults(results.slice(0, 5));
+      setSearchResults(results);
       if (results.length === 0) setShowDropdown(false);
     } catch (err) {
       console.error("Search failed:", err);
@@ -224,19 +192,17 @@ export default function NewAdminOrderPage() {
     }
   };
 
-  // ✅ FIX: Debounce the search so it triggers as admin types
   useEffect(() => {
     const timer = setTimeout(() => {
-      const searchTerm = phone.trim() || name.trim();
+      const searchTerm = phone.trim();
       if (searchTerm.length >= 2) {
         handleSearch(searchTerm);
       }
     }, 400); 
 
     return () => clearTimeout(timer);
-  }, [phone, name]);
+  }, [phone]);
 
-  // ✅ FIX: Select a user from the dropdown
   const selectUser = (user: FoundUser) => {
     setFoundUser(user);
     setShowDropdown(false);
@@ -287,17 +253,14 @@ export default function NewAdminOrderPage() {
         finalFile = await resizeImage(file, 1600, 0.85); 
       }
 
-      const fd = new FormData();
-      fd.append("image", finalFile);
+      // ✅ Upload directly to FIREBASE STORAGE
+      const filename = `admin_manual_orders/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+      const storageRef = ref(storage, filename);
       
-      const res = await fetch("/api/admin/upload", {
-        method: "POST",
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
+      await uploadBytes(storageRef, finalFile);
+      const downloadURL = await getDownloadURL(storageRef);
       
-      updateItem(idx, { image: data.url });
+      updateItem(idx, { image: downloadURL });
       
     } catch (err: any) {
       console.error("Upload failed:", err);
@@ -505,10 +468,9 @@ export default function NewAdminOrderPage() {
 
           <div className="space-y-3 relative" ref={dropdownRef}>
             
-            {/* ✅ FIX: Unified Search Bar (Phone or Name) */}
             <div>
               <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                Search Customer (Type Name or Phone) *
+                Search Customer by Phone *
               </label>
               <div className="relative">
                 <input
@@ -516,9 +478,9 @@ export default function NewAdminOrderPage() {
                   value={phone}
                   onChange={(e) => {
                     setPhone(e.target.value);
-                    if (foundUser) clearUser(); // Clear found user if they start typing again
+                    if (foundUser) clearUser(); 
                   }}
-                  placeholder="01XXXXXXXXX or John Doe..."
+                  placeholder="01XXXXXXXXX, +8801..., or +86..."
                   className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
                 />
                 
@@ -526,7 +488,6 @@ export default function NewAdminOrderPage() {
                   <div className="absolute right-3 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
                 )}
 
-                {/* ✅ FIX: Live Autocomplete Dropdown */}
                 {showDropdown && searchResults.length > 0 && !foundUser && (
                   <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-border-subtle bg-white shadow-lg">
                     {searchResults.map((u) => (
@@ -575,7 +536,7 @@ export default function NewAdminOrderPage() {
               value={name}
               onChange={(v) => {
                 setName(v);
-                if (foundUser) clearUser(); // Clear if editing
+                if (foundUser) clearUser(); 
               }}
               placeholder="Customer's name"
             />
@@ -745,6 +706,7 @@ export default function NewAdminOrderPage() {
                         <img
                           src={item.image}
                           alt=""
+                          referrerPolicy="no-referrer"
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -846,7 +808,6 @@ export default function NewAdminOrderPage() {
           </div>
         </section>
 
-        {/* VALUE ADDED SERVICES */}
         <section className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Value Added Services

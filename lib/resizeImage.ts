@@ -1,26 +1,17 @@
 // lib/resizeImage.ts
-// Browser-side image resizing before upload.
-// Prevents "file too large" errors from phone/PC photos.
-
-/**
- * Resize an image File to a target maximum dimension.
- * Returns a new File (JPEG, compressed) ready to upload.
- */
 export async function resizeImage(
   file: File,
   maxSize: number = 512,
   quality: number = 0.85
 ): Promise<File> {
-  // SVG is vector — don't rasterize
   if (file.type === "image/svg+xml") return file;
 
-  // ✅ FIX: Skip processing ONLY if it's already a small JPG/JPEG.
-  // Small PNGs MUST be processed to fix the black box issue.
   const isJpeg = file.type === "image/jpeg" || file.type === "image/jpg";
-  const isSmall = file.size < 500 * 1024; // Increased to 500KB for better speed
+  const isSmall = file.size < 500 * 1024; // 500KB limit
 
+  // ✅ Skip processing if it's a small JPG (Uploads instantly)
   if (isJpeg && isSmall) {
-    return file; // Returns instantly, no canvas processing needed
+    return file; 
   }
 
   return new Promise((resolve, reject) => {
@@ -52,7 +43,7 @@ export async function resizeImage(
           return;
         }
 
-        // White background (PNG transparency → white)
+        // ✅ Flatten PNG transparency to a solid white background
         ctx.fillStyle = "#FFFFFF";
         ctx.fillRect(0, 0, width, height);
 
@@ -85,21 +76,5 @@ export async function resizeImage(
 
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Convenience — resize then return data URL (for previews).
- */
-export async function resizeImageToDataUrl(
-  file: File,
-  maxSize: number = 512,
-  quality: number = 0.85
-): Promise<string> {
-  const resized = await resizeImage(file, maxSize, quality);
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(resized);
   });
 }

@@ -8,6 +8,33 @@ import { useProducts } from "@/lib/ProductsContext";
 import { formatBDT } from "@/lib/data";
 import { getOrder as getOrderFromFirestore } from "@/lib/firestoreOrders";
 
+function OrderImage({
+  src,
+  onOpen,
+}: {
+  src: string;
+  onOpen: (src: string) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span className="text-xl">📦</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(src)}
+      className="flex h-full w-full items-center justify-center transition hover:opacity-80"
+      aria-label="View full image"
+    >
+      <img
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </button>
+  );
+}
+
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -173,17 +200,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               return (
                 <div key={i} className="flex items-center gap-3 border-b border-border-subtle pb-3 last:border-b-0 last:pb-0">
                   <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
-                    {image ? (
-                      <button
-                        type="button"
-                        onClick={() => setFullscreenImage(image)}
-                        className="flex h-full w-full items-center justify-center transition hover:opacity-80"
-                      >
-                        <img src={image} alt="" className="max-h-full max-w-full object-contain" />
-                      </button>
-                    ) : (
-                      <span className="text-xl">📦</span>
-                    )}
+                    <OrderImage src={image} onOpen={setFullscreenImage} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-text-primary md:text-base">{title}</p>
@@ -340,6 +357,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <img
             src={fullscreenImage}
             alt=""
+            referrerPolicy="no-referrer"
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />

@@ -1,44 +1,43 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-
-function phoneToFakeEmail(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `${digits}@chinadailybazar.app`;
-}
+import { useAuth } from "@/lib/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
-
+  const { user } = useAuth();
+  
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (user) {
+    router.push("/account");
+    return null;
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) {
-      setError("Please enter a valid phone number");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const fakeEmail = phoneToFakeEmail(phone);
-      await signInWithEmailAndPassword(auth, fakeEmail, password);
+      const digits = phone.replace(/\D/g, "");
+      let normalized = digits;
+      if (digits.startsWith("880") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
+      } else if (digits.startsWith("88") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
+      }
+      const email = `${normalized}@chinadailybazar.app`;
+
+      await signInWithEmailAndPassword(auth, email, password);
       router.push("/account");
     } catch (err: any) {
       console.error(err);
@@ -47,107 +46,105 @@ export default function LoginPage() {
         err.code === "auth/wrong-password" ||
         err.code === "auth/invalid-credential"
       ) {
-        setError("Invalid phone number or password");
+        setError("Invalid phone number or password.");
       } else {
-        setError(err.message || "Login failed");
+        setError(err.message || "Failed to login.");
       }
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-bg-secondary">
-      <div className="sticky top-[56px] z-40 border-b border-border-subtle bg-white shadow-sm md:top-[60px]">
-        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-3">
-          <button
-            onClick={() => router.push("/")}
-            aria-label="Back"
-            className="flex h-8 w-8 items-center justify-center text-text-primary transition hover:text-gold-primary"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-          <h1 className="text-lg font-bold text-text-primary md:text-xl">Login</h1>
+    <div className="flex min-h-screen items-center justify-center bg-bg-secondary px-4 py-12">
+      <div className="w-full max-w-md space-y-6 rounded-lg border border-border-subtle bg-white p-6 shadow-card-dark md:p-8">
+        <div className="text-center">
+          <h1 className="font-serif text-2xl font-bold text-text-primary">
+            Welcome Back
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Login to your ChinaDailyBazar account
+          </p>
         </div>
-      </div>
 
-      <div className="mx-auto max-w-md px-3 py-6 md:px-4 md:py-10">
+        {error && (
+          <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-center text-sm text-red-primary">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-4">
-          <div className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-bg-orange text-3xl">👤</div>
-            <h2 className="mt-4 text-xl font-bold text-text-primary md:text-2xl">Welcome back</h2>
-            <p className="mt-1 text-xs text-text-muted md:text-sm">Login with your phone and password</p>
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-            <Field
-              label="Phone Number"
-              value={phone}
-              onChange={setPhone}
-              placeholder="+880 1XXX XXXXXX"
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Phone Number
+            </label>
+            <input
               type="tel"
-            />
-            <Field
-              label="Password"
-              value={password}
-              onChange={setPassword}
-              placeholder="Your password"
-              type="password"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="01XXXXXXXXX"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
             />
           </div>
 
-          {error && (
-            <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary md:text-sm">
-              {error}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-medium text-text-secondary md:text-xs">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-[11px] font-semibold text-gold-primary hover:underline md:text-xs"
+              >
+                Forgot Password?
+              </Link>
             </div>
-          )}
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 pr-10 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-2.5 text-text-muted hover:text-text-primary"
+              >
+                {showPassword ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-50"
           >
             {loading ? "Logging in..." : "Login"}
           </button>
-
-          <p className="text-center text-xs text-text-muted md:text-sm">
-            Don't have an account?{" "}
-            <Link href="/signup" className="font-semibold text-gold-primary underline">
-              Create one
-            </Link>
-          </p>
         </form>
-      </div>
-    </div>
-  );
-}
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-        {label}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
-      />
+        <p className="text-center text-sm text-text-secondary">
+          Don't have an account?{" "}
+          <Link href="/signup" className="font-semibold text-gold-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
