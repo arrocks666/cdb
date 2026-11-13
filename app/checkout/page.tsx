@@ -9,8 +9,6 @@ import { useCart } from "@/lib/CartContext";
 import { useOrders, OrderService } from "@/lib/OrderContext";
 import { useAuth } from "@/lib/AuthContext";
 import LoginPromptModal from "@/components/LoginPromptModal";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // ✅ Firebase
-import { storage } from "@/lib/firebase"; // ✅ Firebase
 import {
   getUserCoupons,
   filterValidCoupons,
@@ -142,7 +140,8 @@ function CheckoutContent() {
     }
 
     return result;
-  }, [cart.items, selectedKeys, products]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.items, selectedKeys.join(","), products]);
 
   const subtotal = rows.reduce((sum, r) => sum + r.price * r.quantity, 0);
   const servicesTotal = selectedServices.reduce((sum, s) => sum + s.price, 0);
@@ -218,36 +217,6 @@ function CheckoutContent() {
     });
   };
 
-  const uploadImageToFirebase = async (imageUrl: string, index: number): Promise<string> => {
-    if (!imageUrl) return "";
-    try {
-      // Use a free proxy to download the Alibaba image in the browser
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      const response = await fetch(proxyUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) return imageUrl; 
-      
-      const blob = await response.blob();
-      
-      // Upload to Firebase Storage
-      const filename = `customer_orders/${Date.now()}_${index}_${Math.random().toString(36).substring(7)}.jpg`;
-      const storageRef = ref(storage, filename);
-      
-      await uploadBytes(storageRef, blob);
-      
-      const downloadURL = await getDownloadURL(storageRef);
-      return downloadURL;
-    } catch (err) {
-      console.warn("Image upload failed, using original link:", err);
-      return imageUrl; 
-    }
-  };
-
   const handlePlaceOrder = async () => {
     if (!user) {
       setLoginPromptOpen(true);
@@ -267,30 +236,22 @@ function CheckoutContent() {
     setError(null);
 
     try {
-      // 1. Download & Upload images to Firebase (with fallback to original)
-      const uploadedItems = await Promise.all(
-        rows.map(async (r, index) => {
-          const permanentImageUrl = await uploadImageToFirebase(r.image, index);
-          return {
-            productId: r.productId,
-            colorId: r.colorId,
-            size: r.size,
-            quantity: r.quantity,
-            price: r.price,
-            title: r.title,
-            image: permanentImageUrl, 
-            isLive: r.isLive,
-          };
-        })
-      );
-
-      // 2. Save the order
       const newOrder = await orders.addOrder({
-        items: uploadedItems,
+        items: rows.map((r) => ({
+          productId: r.productId,
+          colorId: r.colorId,
+          size: r.size,
+          quantity: r.quantity,
+          price: r.price,
+          title: r.title,
+          image: r.image,
+          isLive: r.isLive,
+        })),
         subtotal,
         shipping,
         total,
-        paymentMethod: PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
+        paymentMethod:
+          PAYMENT_METHODS.find((p) => p.id === payment)?.label ?? "COD",
         address: {
           ...address,
           email: email.trim(),
@@ -324,8 +285,13 @@ function CheckoutContent() {
       <div className="min-h-screen bg-bg-secondary">
         <div className="mx-auto max-w-7xl px-4 py-20 text-center">
           <div className="text-6xl opacity-40">🛒</div>
-          <h1 className="mt-4 text-xl font-bold text-text-primary">Nothing to checkout</h1>
-          <Link href="/" className="mt-5 inline-block rounded-full bg-gold-primary px-6 py-2.5 text-xs font-semibold text-white shadow-orange-glow">
+          <h1 className="mt-4 text-xl font-bold text-text-primary">
+            Nothing to checkout
+          </h1>
+          <Link
+            href="/"
+            className="mt-5 inline-block rounded-full bg-gold-primary px-6 py-2.5 text-xs font-semibold text-white shadow-orange-glow"
+          >
             Go Shopping
           </Link>
         </div>
@@ -338,10 +304,17 @@ function CheckoutContent() {
       <div className="min-h-screen bg-bg-secondary pb-8">
         <div className="sticky top-[56px] z-40 border-b border-border-subtle bg-white shadow-sm md:top-[60px]">
           <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-3">
-            <Link href="/cart" className="flex h-8 w-8 items-center justify-center text-text-primary hover:text-gold-primary">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            <Link
+              href="/cart"
+              className="flex h-8 w-8 items-center justify-center text-text-primary hover:text-gold-primary"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
             </Link>
-            <h1 className="flex-1 text-lg font-bold text-text-primary md:text-xl">Checkout</h1>
+            <h1 className="flex-1 text-lg font-bold text-text-primary md:text-xl">
+              Checkout
+            </h1>
           </div>
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 pb-3">
             <StepDot num={1} label="Address" active={step === 1} done={step > 1} onClick={() => handleStepClick(1)} />
@@ -355,7 +328,9 @@ function CheckoutContent() {
         <div className="mx-auto max-w-3xl px-3 py-4 md:px-4 md:py-6">
           {step === 1 && (
             <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-              <h2 className="mb-4 text-base font-bold text-text-primary md:text-lg">Delivery Address</h2>
+              <h2 className="mb-4 text-base font-bold text-text-primary md:text-lg">
+                Delivery Address
+              </h2>
               <div className="space-y-3">
                 <Field label="Full Name *" value={address.name} onChange={(v) => setAddress({ ...address, name: v })} placeholder="Enter your full name" />
                 <Field label="Phone Number *" value={address.phone} onChange={(v) => setAddress({ ...address, phone: v })} placeholder="+880 1XXX XXXXXX" />
@@ -363,7 +338,9 @@ function CheckoutContent() {
                 <Field label="District *" value={address.district} onChange={(v) => setAddress({ ...address, district: v })} placeholder="e.g., Dhaka" />
                 
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">Email Address (For Order Updates) *</label>
+                  <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                    Email Address (For Order Updates) *
+                  </label>
                   <input
                     type="email"
                     value={email}
@@ -371,12 +348,22 @@ function CheckoutContent() {
                     placeholder="customer@example.com"
                     className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
                   />
+                  <p className="mt-1 text-[10px] text-text-muted">
+                    We will send your order tracking updates to this email.
+                  </p>
                 </div>
               </div>
 
-              {error && <div className="mt-4 rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">{error}</div>}
+              {error && (
+                <div className="mt-4 rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">
+                  {error}
+                </div>
+              )}
 
-              <button onClick={() => handleStepClick(2)} className="mt-5 w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow">
+              <button
+                onClick={() => handleStepClick(2)}
+                className="mt-5 w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow"
+              >
                 Continue to Payment
               </button>
             </div>
@@ -385,25 +372,37 @@ function CheckoutContent() {
           {step === 2 && (
             <div className="space-y-4">
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                <h2 className="mb-4 text-base font-bold text-text-primary md:text-lg">Payment Method</h2>
+                <h2 className="mb-4 text-base font-bold text-text-primary md:text-lg">
+                  Payment Method
+                </h2>
                 <div className="space-y-2">
                   {PAYMENT_METHODS.map((method) => (
                     <button
                       key={method.id}
                       onClick={() => setPayment(method.id)}
                       className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${
-                        payment === method.id ? "border-gold-primary bg-bg-orange" : "border-border-subtle bg-white hover:border-gold-primary"
+                        payment === method.id
+                          ? "border-gold-primary bg-bg-orange"
+                          : "border-border-subtle bg-white hover:border-gold-primary"
                       }`}
                     >
-                      <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${payment === method.id ? "border-gold-primary" : "border-border-subtle"}`}>
-                        {payment === method.id && <span className="h-2.5 w-2.5 rounded-full bg-gold-primary" />}
+                      <div
+                        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                          payment === method.id ? "border-gold-primary" : "border-border-subtle"
+                        }`}
+                      >
+                        {payment === method.id && (
+                          <span className="h-2.5 w-2.5 rounded-full bg-gold-primary" />
+                        )}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 text-sm font-semibold text-text-primary md:text-base">
                           <span>{method.icon}</span>
                           {method.label}
                         </div>
-                        <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">{method.note}</p>
+                        <p className="mt-0.5 text-[11px] text-text-muted md:text-xs">
+                          {method.note}
+                        </p>
                       </div>
                     </button>
                   ))}
@@ -411,7 +410,9 @@ function CheckoutContent() {
 
                 {payment === "bank" && settings.bankAccountNumber && (
                   <div className="mt-4 rounded-lg border border-gold-primary/40 bg-bg-orange p-4">
-                    <p className="text-xs font-bold text-text-primary md:text-sm">Bank Transfer Details</p>
+                    <p className="text-xs font-bold text-text-primary md:text-sm">
+                      Bank Transfer Details
+                    </p>
                     <div className="mt-3 space-y-2 text-xs">
                       <CopyRow label="Bank" value={settings.bankName} onCopy={handleCopy} />
                       <CopyRow label="Account Number" value={settings.bankAccountNumber} onCopy={handleCopy} />
@@ -420,9 +421,20 @@ function CheckoutContent() {
                   </div>
                 )}
               </div>
+
               <div className="flex gap-3">
-                <button onClick={() => handleStepClick(1)} className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary">Back</button>
-                <button onClick={() => handleStepClick(3)} className="flex-1 rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow">Review Order</button>
+                <button
+                  onClick={() => handleStepClick(1)}
+                  className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => handleStepClick(3)}
+                  className="flex-1 rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow"
+                >
+                  Review Order
+                </button>
               </div>
             </div>
           )}
@@ -430,34 +442,63 @@ function CheckoutContent() {
           {step === 3 && (
             <div className="space-y-4">
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Shipping To</h2>
-                <p className="text-sm font-semibold text-text-primary md:text-base">{address.name || "—"}</p>
-                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">{address.phone || "—"}</p>
-                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">{address.address || "—"}</p>
-                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">{address.district || "—"}</p>
-                {email && <p className="mt-2 inline-block rounded bg-success/10 px-2 py-1 text-xs font-medium text-success">Email: {email}</p>}
+                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                  Shipping To
+                </h2>
+                <p className="text-sm font-semibold text-text-primary md:text-base">
+                  {address.name || "—"}
+                </p>
+                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                  {address.phone || "—"}
+                </p>
+                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                  {address.address || "—"}
+                </p>
+                <p className="mt-0.5 text-xs text-text-secondary md:text-sm">
+                  {address.district || "—"}
+                </p>
+                {email && (
+                  <p className="mt-2 inline-block rounded bg-success/10 px-2 py-1 text-xs font-medium text-success">
+                    Email: {email}
+                  </p>
+                )}
               </div>
 
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Order Summary</h2>
+                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                  Order Summary
+                </h2>
                 <div className="space-y-3">
                   {rows.map((r) => (
-                    <div key={`${r.productId}-${r.colorId}-${r.size ?? ""}`} className="flex items-center gap-3">
+                    <div
+                      key={`${r.productId}-${r.colorId}-${r.size ?? ""}`}
+                      className="flex items-center gap-3"
+                    >
                       <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-white p-1">
                         <CheckoutImage src={r.image} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-text-primary">{r.title}</p>
-                        <p className="text-[11px] text-text-muted">Qty {r.quantity}{r.size ? ` · ${r.size}` : ""}</p>
+                        <p className="truncate text-sm font-semibold text-text-primary">
+                          {r.title}
+                        </p>
+                        <p className="text-[11px] text-text-muted">
+                          Qty {r.quantity}
+                          {r.size ? ` · ${r.size}` : ""}
+                        </p>
                       </div>
-                      <span className="text-sm font-bold text-red-primary">{formatBDT(r.price * r.quantity)}</span>
+                      <span className="text-sm font-bold text-red-primary">
+                        {formatBDT(r.price * r.quantity)}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
 
+              {/* VALUE ADDED SERVICES */}
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Value Added Services</h2>
+                <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                  Value Added Services
+                </h2>
                 <div className="space-y-2">
                   {AVAILABLE_SERVICES.map((service) => {
                     const isSelected = selectedServices.some(s => s.id === service.id);
@@ -465,7 +506,9 @@ function CheckoutContent() {
                       <button
                         key={service.id}
                         onClick={() => toggleService(service)}
-                        className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${isSelected ? "border-gold-primary bg-bg-orange" : "border-border-subtle bg-white hover:border-gold-primary"}`}
+                        className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                          isSelected ? "border-gold-primary bg-bg-orange" : "border-border-subtle bg-white hover:border-gold-primary"
+                        }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`flex h-5 w-5 items-center justify-center rounded border ${isSelected ? "border-gold-primary bg-gold-primary text-white" : "border-border-subtle bg-white"}`}>
@@ -485,28 +528,68 @@ function CheckoutContent() {
 
               {user && availableCoupons.length > 0 && (
                 <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                  <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Have a Coupon?</h2>
+                  <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                    Have a Coupon?
+                  </h2>
+
                   {appliedCoupon ? (
                     <div className="flex items-center justify-between rounded-lg border border-success/40 bg-success/5 px-3 py-2.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-success md:text-sm">✓ {appliedCoupon.code} applied</p>
-                        <p className="mt-0.5 text-[11px] text-text-muted">{formatBDT(appliedCoupon.amount)} off</p>
+                        <p className="text-xs font-bold text-success md:text-sm">
+                          ✓ {appliedCoupon.code} applied
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-text-muted">
+                          {formatBDT(appliedCoupon.amount)} off
+                        </p>
                       </div>
-                      <button onClick={handleRemoveCoupon} className="text-[11px] font-semibold text-red-primary underline md:text-xs">Remove</button>
+                      <button
+                        onClick={handleRemoveCoupon}
+                        className="text-[11px] font-semibold text-red-primary underline md:text-xs"
+                      >
+                        Remove
+                      </button>
                     </div>
                   ) : (
                     <>
                       <div className="flex gap-2">
-                        <input type="text" value={couponInput} onChange={(e) => setCouponInput(e.target.value.toUpperCase())} placeholder="Enter code" className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none" />
-                        <button onClick={() => handleApplyCoupon(couponInput)} disabled={!couponInput.trim()} className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow disabled:opacity-40">Apply</button>
+                        <input
+                          type="text"
+                          value={couponInput}
+                          onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                          placeholder="Enter code"
+                          className="flex-1 rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleApplyCoupon(couponInput)}
+                          disabled={!couponInput.trim()}
+                          className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow disabled:opacity-40"
+                        >
+                          Apply
+                        </button>
                       </div>
-                      {couponError && <p className="mt-2 text-[11px] text-red-primary md:text-xs">{couponError}</p>}
+
+                      {couponError && (
+                        <p className="mt-2 text-[11px] text-red-primary md:text-xs">
+                          {couponError}
+                        </p>
+                      )}
+
                       <div className="mt-3 space-y-1.5">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Your Available Coupons</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                          Your Available Coupons
+                        </p>
                         {availableCoupons.map((c) => (
-                          <button key={c.code} onClick={() => handleApplyCoupon(c.code)} className="flex w-full items-center justify-between rounded border border-gold-primary/30 bg-bg-orange px-3 py-2 text-xs transition hover:border-gold-primary">
-                            <span className="font-mono font-bold text-gold-primary">{c.code}</span>
-                            <span className="font-semibold text-text-primary">{formatBDT(c.amount)} OFF</span>
+                          <button
+                            key={c.code}
+                            onClick={() => handleApplyCoupon(c.code)}
+                            className="flex w-full items-center justify-between rounded border border-gold-primary/30 bg-bg-orange px-3 py-2 text-xs transition hover:border-gold-primary"
+                          >
+                            <span className="font-mono font-bold text-gold-primary">
+                              {c.code}
+                            </span>
+                            <span className="font-semibold text-text-primary">
+                              {formatBDT(c.amount)} OFF
+                            </span>
                             <span className="text-text-muted">Tap to apply</span>
                           </button>
                         ))}
@@ -518,18 +601,52 @@ function CheckoutContent() {
 
               {payment === "bank" && (
                 <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-                  <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">Payment Confirmation</h2>
+                  <h2 className="mb-3 text-base font-bold text-text-primary md:text-lg">
+                    Payment Confirmation
+                  </h2>
+
                   <div className="space-y-3">
                     <div>
-                      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">Transaction ID (from your bank transfer)</label>
-                      <input type="text" value={transactionId} onChange={(e) => setTransactionId(e.target.value)} placeholder="e.g., 8N7A5D2F1C" className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none" />
+                      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                        Transaction ID (from your bank transfer)
+                      </label>
+                      <input
+                        type="text"
+                        value={transactionId}
+                        onChange={(e) => setTransactionId(e.target.value)}
+                        placeholder="e.g., 8N7A5D2F1C"
+                        className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 font-mono text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                      />
                     </div>
+
                     <div>
-                      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">How much are you paying now? (৳)</label>
-                      <input type="number" min={0} max={total} value={paidAmountInput} onChange={(e) => setPaidAmountInput(e.target.value)} placeholder={String(total)} className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none" />
+                      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+                        How much are you paying now? (৳)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={total}
+                        value={paidAmountInput}
+                        onChange={(e) => setPaidAmountInput(e.target.value)}
+                        placeholder={String(total)}
+                        className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+                      />
                       <div className="mt-2 flex flex-wrap gap-3 text-[11px] md:text-xs">
-                        <span className="text-text-secondary">Paying now: <span className="font-bold text-success">{formatBDT(paidAmount)}</span></span>
-                        {dueAmount > 0 && <span className="text-text-secondary">Due: <span className="font-bold text-red-primary">{formatBDT(dueAmount)}</span></span>}
+                        <span className="text-text-secondary">
+                          Paying now:{" "}
+                          <span className="font-bold text-success">
+                            {formatBDT(paidAmount)}
+                          </span>
+                        </span>
+                        {dueAmount > 0 && (
+                          <span className="text-text-secondary">
+                            Due:{" "}
+                            <span className="font-bold text-red-primary">
+                              {formatBDT(dueAmount)}
+                            </span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -538,29 +655,78 @@ function CheckoutContent() {
 
               <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
                 <div className="space-y-1.5 text-xs md:text-sm">
-                  <div className="flex justify-between text-text-secondary"><span>Subtotal</span><span className="text-text-primary">{formatBDT(subtotal)}</span></div>
-                  {selectedServices.length > 0 && <div className="flex justify-between text-text-secondary"><span>Services</span><span className="text-text-primary">{formatBDT(servicesTotal)}</span></div>}
-                  <div className="flex justify-between text-text-secondary"><span>Shipping</span><span className="text-text-muted">—</span></div>
-                  {appliedCoupon && discountAmount > 0 && <div className="flex justify-between text-success"><span>Coupon ({appliedCoupon.code})</span><span>-{formatBDT(discountAmount)}</span></div>}
-                  <div className="flex justify-between text-text-secondary"><span>Payment</span><span className="text-text-primary">{PAYMENT_METHODS.find((p) => p.id === payment)?.label}</span></div>
+                  <div className="flex justify-between text-text-secondary">
+                    <span>Subtotal</span>
+                    <span className="text-text-primary">{formatBDT(subtotal)}</span>
+                  </div>
+                  
+                  {selectedServices.length > 0 && (
+                    <div className="flex justify-between text-text-secondary">
+                      <span>Services</span>
+                      <span className="text-text-primary">{formatBDT(servicesTotal)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-text-secondary">
+                    <span>Shipping</span>
+                    <span className="text-text-muted">—</span>
+                  </div>
+                  {appliedCoupon && discountAmount > 0 && (
+                    <div className="flex justify-between text-success">
+                      <span>Coupon ({appliedCoupon.code})</span>
+                      <span>-{formatBDT(discountAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-text-secondary">
+                    <span>Payment</span>
+                    <span className="text-text-primary">
+                      {PAYMENT_METHODS.find((p) => p.id === payment)?.label}
+                    </span>
+                  </div>
                   <div className="mt-2 flex justify-between border-t border-border-subtle pt-2">
-                    <span className="text-sm font-semibold text-text-primary md:text-base">Total</span>
-                    <span className="text-lg font-bold text-red-primary md:text-xl">{formatBDT(total)}</span>
+                    <span className="text-sm font-semibold text-text-primary md:text-base">
+                      Total
+                    </span>
+                    <span className="text-lg font-bold text-red-primary md:text-xl">
+                      {formatBDT(total)}
+                    </span>
                   </div>
                   {payment === "bank" && (
                     <>
-                      <div className="flex justify-between text-success"><span>Paid now</span><span className="font-semibold">{formatBDT(paidAmount)}</span></div>
-                      {dueAmount > 0 && <div className="flex justify-between text-red-primary"><span>Due on delivery</span><span className="font-semibold">{formatBDT(dueAmount)}</span></div>}
+                      <div className="flex justify-between text-success">
+                        <span>Paid now</span>
+                        <span className="font-semibold">{formatBDT(paidAmount)}</span>
+                      </div>
+                      {dueAmount > 0 && (
+                        <div className="flex justify-between text-red-primary">
+                          <span>Due on delivery</span>
+                          <span className="font-semibold">{formatBDT(dueAmount)}</span>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
               </div>
 
-              {error && <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">{error}</div>}
+              {error && (
+                <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary">
+                  {error}
+                </div>
+              )}
 
               <div className="flex gap-3">
-                <button onClick={() => handleStepClick(2)} disabled={placing} className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary disabled:opacity-40">Back</button>
-                <button onClick={handlePlaceOrder} disabled={placing} className="flex-1 rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow disabled:opacity-60">
+                <button
+                  onClick={() => handleStepClick(2)}
+                  disabled={placing}
+                  className="flex-1 rounded-lg border border-border-subtle bg-white py-3 text-sm font-semibold text-text-secondary disabled:opacity-40"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={placing}
+                  className="flex-1 rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow disabled:opacity-60"
+                >
                   {placing ? "Placing..." : "Place Order"}
                 </button>
               </div>
@@ -569,46 +735,117 @@ function CheckoutContent() {
         </div>
       </div>
 
-      <LoginPromptModal open={loginPromptOpen} onClose={() => setLoginPromptOpen(false)} title="Login to place order" message="Please login or create an account to place your order. Your cart will be saved." />
+      <LoginPromptModal
+        open={loginPromptOpen}
+        onClose={() => setLoginPromptOpen(false)}
+        title="Login to place order"
+        message="Please login or create an account to place your order. Your cart will be saved."
+      />
     </>
   );
 }
 
-function CopyRow({ label, value, onCopy }: { label: string; value: string; onCopy: (t: string) => void; }) {
+function CopyRow({
+  label,
+  value,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  onCopy: (t: string) => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-text-muted">{label}:</span>
       <div className="flex items-center gap-2">
         <span className="font-mono text-text-primary">{value}</span>
-        <button onClick={() => onCopy(value)} className="text-[10px] font-semibold text-gold-primary underline">Copy</button>
+        <button
+          onClick={() => onCopy(value)}
+          className="text-[10px] font-semibold text-gold-primary underline"
+        >
+          Copy
+        </button>
       </div>
     </div>
   );
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; }) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <div>
-      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">{label}</label>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none" />
+      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
+      />
     </div>
   );
 }
 
-function StepDot({ num, label, active, done, onClick }: { num: number; label: string; active: boolean; done: boolean; onClick: () => void; }) {
+function StepDot({
+  num,
+  label,
+  active,
+  done,
+  onClick,
+}: {
+  num: number;
+  label: string;
+  active: boolean;
+  done: boolean;
+  onClick: () => void;
+}) {
   return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1">
-      <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${done ? "bg-success text-white" : active ? "bg-gold-primary text-white shadow-orange-glow" : "bg-border-subtle text-text-muted"}`}>
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1"
+    >
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${
+          done
+            ? "bg-success text-white"
+            : active
+            ? "bg-gold-primary text-white shadow-orange-glow"
+            : "bg-border-subtle text-text-muted"
+        }`}
+      >
         {done ? "✓" : num}
       </div>
-      <span className={`text-[10px] font-medium md:text-xs ${active ? "text-gold-primary" : done ? "text-success" : "text-text-muted"}`}>{label}</span>
+      <span
+        className={`text-[10px] font-medium md:text-xs ${
+          active ? "text-gold-primary" : done ? "text-success" : "text-text-muted"
+        }`}
+      >
+        {label}
+      </span>
     </button>
   );
 }
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-bg-secondary flex items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" /></div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+        </div>
+      }
+    >
       <CheckoutContent />
     </Suspense>
   );

@@ -6,8 +6,6 @@ dotenv.config({ path: ".env.local" });
 
 import { fetchPizani1688 } from "./pizani1688";
 import type { PizaniProduct } from "./pizani1688";
-import { parsebirdByOfferId } from "./parsebird1688";
-import type { ParsebirdListing } from "./parsebird1688";
 import {
   createJob,
   updateJob,
@@ -23,43 +21,29 @@ import {
 } from "./firestoreLiveProducts";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
-const APIFY_IMAGE_SEARCH_ACTOR_ID = process.env.APIFY_IMAGE_SEARCH_ACTOR_ID;
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN in .env.local");
-if (!APIFY_IMAGE_SEARCH_ACTOR_ID)
-  throw new Error("Missing APIFY_IMAGE_SEARCH_ACTOR_ID in .env.local");
 
 const PRODUCTS_WANTED = 3;
-const ASK_FOR = 5;
+const ASK_FOR = 3; // ✅ Keep this low for fast results
 const MIN_PRICE_BDT = 20;
-
-const IS_DEV00 = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("dev00");
-const IS_CRAWLEAST = APIFY_IMAGE_SEARCH_ACTOR_ID.includes("crawleast");
-
-console.log(
-  `[image-search] actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (dev00=${IS_DEV00}, crawleast=${IS_CRAWLEAST})`
-);
 
 type RawListing = {
   offerId?: string;
   productId?: string;
   title?: string;
+  titleEn?: string; 
   price?: number;
+  priceUsd?: number; 
   priceYuan?: number;
   currency?: string;
+  image?: string; 
   imageUrl?: string;
   productUrl?: string;
   detailUrl?: string;
+  url?: string; 
   supplierName?: string;
   supplier?: { name?: string };
-  [key: string]: unknown;
-};
-
-type RawImageSearchResult = {
-  results?: RawListing[];
-  matches?: RawListing[];
-  listings?: RawListing[];
-  error?: string | null;
   [key: string]: unknown;
 };
 
@@ -80,33 +64,13 @@ function hashImageBase64(base64: string): string {
   return `img_${h.toString(36)}_${base64.length}`;
 }
 
-function extractListings(raw: RawImageSearchResult): RawListing[] {
-  if (Array.isArray(raw.results)) return raw.results as RawListing[];
-  if (Array.isArray(raw.matches)) return raw.matches as RawListing[];
-  if (Array.isArray(raw.listings)) return raw.listings as RawListing[];
-
-  for (const key of Object.keys(raw)) {
-    const value = raw[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const nested = value as Record<string, unknown>;
-      if (Array.isArray(nested.results)) return nested.results as RawListing[];
-      if (Array.isArray(nested.matches)) return nested.matches as RawListing[];
-      if (Array.isArray(nested.listings)) return nested.listings as RawListing[];
-      if (Array.isArray(nested.items)) return nested.items as RawListing[];
-      if (Array.isArray(nested.products)) return nested.products as RawListing[];
-      if (Array.isArray(nested.data)) return nested.data as RawListing[];
-    }
-  }
-  return [];
-}
-
 async function findListingsByBase64(
   dataUrlOrBase64: string
 ): Promise<RawListing[]> {
   const rawBase64 = toRawBase64(dataUrlOrBase64);
   if (!rawBase64) throw new Error("Invalid image data");
 
-  // 1. Upload to ImgBB first (takes ~2 seconds)
+  // 1. Upload to ImgBB first
   let imageUrl = "";
   try {
     const imgbbForm = new FormData();
@@ -129,18 +93,19 @@ async function findListingsByBase64(
     console.warn(`[image-search] ImgBB failed, falling back to Base64`, err);
   }
 
-  // 2. Send the URL to Apify (FAST) instead of Base64 (SLOW)
-  const input: Record<string, unknown> = imageUrl
-    ? { imageUrls: [imageUrl], maxImages: 1, maxResultsPerImage: ASK_FOR }
-    : { imagesBase64: [rawBase64], maxImages: 1, maxResultsPerImage: ASK_FOR };
+  const input = {
+    imageUrls: [imageUrl], 
+    maxResultsPerInput: ASK_FOR, 
+  };
 
-  const url = `https://api.apify.com/v2/acts/${APIFY_IMAGE_SEARCH_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=180`;
+  // ✅ Use the sync endpoint with the correct Actor ID (tilde ~)
+  const ACTOR_ID = "blueskyscraper~1688-image-search-scraper"; 
+  const runUrl = `https://api.apify.com/v2/actors/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&waitForFinish=30`;
+  
   const startedAt = Date.now();
-  console.log(
-    `[image-search] POST actor=${APIFY_IMAGE_SEARCH_ACTOR_ID} (URL=${!!imageUrl})`
-  );
+  console.log(`[image-search] POST sync actor=${ACTOR_ID} (max ${ASK_FOR} results)`);
 
-  const response = await fetch(url, {
+  const response = await fetch(runUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -151,39 +116,37 @@ async function findListingsByBase64(
     throw new Error(`Image search actor failed (${response.status}): ${text}`);
   }
 
-  const items = (await response.json()) as RawImageSearchResult[];
+  // The sync endpoint returns the dataset items directly
+  const items = (await response.json()) as RawListing[];
   const ms = Date.now() - startedAt;
 
-  const allListings: RawListing[] = [];
-  for (const item of items) {
-    if (item.error) continue;
-    allListings.push(...extractListings(item));
-  }
-
-  console.log(`[image-search] ${allListings.length} listings in ${ms}ms`);
-  return allListings;
+  console.log(`[image-search] ${items.length} listings in ${ms}ms`);
+  return items;
 }
 
 function fallbackToLive(raw: RawListing): LiveProduct | null {
-  const id = String(raw.offerId ?? raw.productId ?? "");
-  if (!id || !raw.title || !raw.imageUrl) return null;
+  const idMatch = (raw.url || "").match(/offer\/(\d+)/);
+  const id = idMatch ? idMatch[1] : String(raw.offerId ?? raw.productId ?? "");
+  
+  const title = raw.titleEn || raw.title;
+  const imageUrl = raw.image || raw.imageUrl;
+  
+  if (!id || !title || !imageUrl) return null;
 
-  const priceCny =
-    typeof raw.price === "number"
-      ? raw.price
-      : typeof raw.priceYuan === "number"
-        ? raw.priceYuan
-        : 0;
-  if (priceCny <= 0) return null;
-
-  const priceBdt = Math.round(priceCny * 18.5);
+  const priceUsd = typeof raw.priceUsd === "number" ? raw.priceUsd : 0;
+  const priceCny = typeof raw.price === "number" ? raw.price : 0;
+  
+  let priceBdt = 0;
+  if (priceUsd > 0) priceBdt = Math.round(priceUsd * 120);
+  else if (priceCny > 0) priceBdt = Math.round(priceCny * 18.5);
+  
   if (priceBdt < MIN_PRICE_BDT) return null;
 
   const oldPrice = Math.round(priceBdt * 1.25);
 
   return {
     id: `live-${id}`,
-    title: String(raw.title).slice(0, 120),
+    title: String(title).slice(0, 120),
     subtitle: "China",
     price: priceBdt,
     priceMax: undefined,
@@ -191,8 +154,8 @@ function fallbackToLive(raw: RawListing): LiveProduct | null {
     discount: 20,
     rating: 4.5,
     reviews: 0,
-    image: String(raw.imageUrl),
-    gallery: [String(raw.imageUrl)],
+    image: String(imageUrl),
+    gallery: [String(imageUrl)],
     colors: [],
     sizes: [],
     specs: undefined,
@@ -200,12 +163,10 @@ function fallbackToLive(raw: RawListing): LiveProduct | null {
     inStock: true,
     stockCount: 999,
     features: [{ icon: "📍", label: "China" }],
-    description: String(raw.title),
-    sourceUrl: String(raw.detailUrl ?? raw.productUrl ?? ""),
+    description: String(title),
+    sourceUrl: String(raw.url || raw.detailUrl || ""),
     moq: 1,
-    supplierName: String(
-      raw.supplierName ?? raw.supplier?.name ?? "1688 Supplier"
-    ),
+    supplierName: String(raw.supplierName || "1688 Supplier"),
     priceOriginalCny: priceCny,
     isLive: true,
     lastRefreshedAt: Date.now(),
@@ -225,58 +186,9 @@ function cnyToSellingBdt(cny: number): number {
   return Math.max(MIN_PRICE_BDT, Math.round(sellingRaw / 10) * 10);
 }
 
-function medianOf(nums: number[]): number {
-  if (nums.length === 0) return 0;
-  const sorted = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-  return sorted[mid];
-}
-
-function pickRealBasePrice(prices: number[]): number {
-  const valid = prices.filter((n) => n > 0);
-  if (valid.length === 0) return 0;
-  if (valid.length <= 2) return Math.min(...valid);
-
-  const median = medianOf(valid);
-  const threshold = median * 0.5;
-  const filtered = valid.filter((n) => n >= threshold);
-  if (filtered.length === 0) return Math.min(...valid);
-  return Math.min(...filtered);
-}
-
-function parseWeightFromSpecs(
-  specs: { name: string; value: string }[] | undefined
-): number | undefined {
-  if (!specs || specs.length === 0) return undefined;
-
-  const weightSpec = specs.find((s) =>
-    s.name.toLowerCase().includes("weight")
-  );
-  if (!weightSpec) return undefined;
-
-  const val = weightSpec.value;
-
-  const gramMatch = val.match(/(\d+(?:\.\d+)?)\s*g/i);
-  if (gramMatch) {
-    const grams = parseFloat(gramMatch[1]);
-    if (grams > 0 && grams < 100000) return grams / 1000;
-  }
-
-  const kgMatch = val.match(/(\d+(?:\.\d+)?)\s*kg/i);
-  if (kgMatch) {
-    const kg = parseFloat(kgMatch[1]);
-    if (kg > 0 && kg < 100) return kg;
-  }
-
-  return undefined;
-}
-
 export function mergeToLive(
   pizani: PizaniProduct,
-  parsebird: ParsebirdListing | null
+  parsebird: any | null // ✅ No longer used for variants
 ): LiveProduct {
   const variants: LiveProductVariant[] = (pizani.variants ?? []).map((v) => ({
     colorId: v.colorId,
@@ -289,76 +201,15 @@ export function mergeToLive(
     specId: v.specId,
   }));
 
-  const skuPrices: LiveProduct["skuPrices"] = {};
-
-  if (parsebird && parsebird.skuVariants.length > 0) {
-    for (const pv of parsebird.skuVariants) {
-      const priceNum = Number(pv.priceCny) || 0;
-      const discountNum = Number(pv.discountPriceCny) || priceNum;
-
-      skuPrices[pv.specId] = {
-        priceCny: priceNum,
-        discountPriceCny: discountNum,
-        stock: pv.stock,
-      };
-
-      const match = variants.find((v) => v.specId === pv.specId);
-      if (match) {
-        match.priceCny = discountNum;
-        match.price = cnyToSellingBdt(discountNum);
-        if (pv.stock != null) match.stock = pv.stock;
-      }
-    }
-  }
-
-  // Weight: Parsebird unitWeightKg first, else parse from Pizani specs
-  let weightKg: number | undefined = undefined;
-  if (parsebird?.unitWeightKg && parsebird.unitWeightKg > 0) {
-    weightKg = parsebird.unitWeightKg;
-  }
-  if (!weightKg) {
-    weightKg = parseWeightFromSpecs(pizani.specs);
-  }
-
-  let finalBasePrice = pizani.price;
-  let finalOldPrice = pizani.oldPrice;
-  let finalPriceCny = pizani.priceCnyMin;
-  let finalPriceMax: number | undefined = undefined;
-
-  if (parsebird && parsebird.skuVariants.length > 0) {
-    const cnyPrices = parsebird.skuVariants
-      .map((v) => Number(v.discountPriceCny) || Number(v.priceCny))
-      .filter((n) => n > 0);
-
-    if (cnyPrices.length > 0) {
-      const baseCny = pickRealBasePrice(cnyPrices);
-      finalBasePrice = cnyToSellingBdt(baseCny);
-      finalOldPrice = Math.round(finalBasePrice * 1.3);
-      finalPriceCny = baseCny;
-
-      const maxCny = Math.max(...cnyPrices);
-      const maxBdt = cnyToSellingBdt(maxCny);
-      if (maxBdt > finalBasePrice * 1.2) {
-        finalPriceMax = maxBdt;
-      }
-
-      console.log(
-        `[image-search] ${pizani.id}: variants=${cnyPrices.length}, min=${Math.min(
-          ...cnyPrices
-        )}, max=${maxCny}, base=¥${baseCny}→৳${finalBasePrice}, weight=${weightKg ?? "none"}kg`
-      );
-    }
-  }
-
   return {
     id: `live-${pizani.id}`,
     title: pizani.title,
     subtitle: pizani.subtitle,
-    price: finalBasePrice,
-    priceMax: finalPriceMax,
-    priceCnyMin: finalPriceCny,
+    price: pizani.price,
+    priceMax: pizani.priceMax,
+    priceCnyMin: pizani.priceCnyMin,
     priceCnyMax: pizani.priceCnyMax,
-    oldPrice: finalOldPrice,
+    oldPrice: pizani.oldPrice,
     discount: pizani.discount,
     rating: pizani.rating,
     reviews: pizani.reviews,
@@ -376,18 +227,16 @@ export function mergeToLive(
     sourceUrl: pizani.sourceUrl,
     moq: pizani.moq,
     supplierName: pizani.supplierName,
-    priceOriginalCny: finalPriceCny,
+    priceOriginalCny: pizani.priceCnyMin,
     isLive: true,
-    weightKg,
-    skuPrices:
-      Object.keys(skuPrices).length > 0 ? skuPrices : undefined,
+    weightKg: pizani.weightKg,
     lastRefreshedAt: Date.now(),
   };
 }
 
 export function mergeToLiveForRefresh(
   pizani: PizaniProduct,
-  parsebird: ParsebirdListing | null
+  parsebird: any | null
 ): LiveProduct {
   return mergeToLive(pizani, parsebird);
 }
@@ -402,13 +251,10 @@ export async function runImageSearchJob(
 
     const rawBase64 = toRawBase64(imageBase64OrUrl);
     const imageHash = hashImageBase64(rawBase64);
-    console.log(`[job ${jobId}] image hash = ${imageHash}`);
 
-    // ✅ Try cache first
     try {
       const cachedIds = await getSearchCache(imageHash);
       if (cachedIds.length > 0) {
-        console.log(`[job ${jobId}] CACHE HIT — ${cachedIds.length} ids`);
         const cachedProducts = await loadCachedProducts(cachedIds);
         if (cachedProducts.length > 0) {
           for (const p of cachedProducts) pushProduct(jobId, p);
@@ -417,9 +263,6 @@ export async function runImageSearchJob(
             offerIds: cachedProducts.map((p) => p.id),
             totalExpected: cachedProducts.length,
           });
-          console.log(
-            `[job ${jobId}] DONE (cache) total=${Date.now() - t0}ms`
-          );
           return;
         }
       }
@@ -427,9 +270,7 @@ export async function runImageSearchJob(
       console.warn(`[job ${jobId}] cache lookup failed:`, cacheErr);
     }
 
-    // Cache miss — scrape fresh
     const listings = await findListingsByBase64(imageBase64OrUrl);
-    console.log(`[job ${jobId}] image search done at +${Date.now() - t0}ms`);
 
     if (listings.length === 0) {
       updateJob(jobId, {
@@ -442,7 +283,9 @@ export async function runImageSearchJob(
     const offerIds: string[] = [];
     const seen = new Set<string>();
     for (const l of listings) {
-      const id = String(l.offerId ?? l.productId ?? "");
+      const idMatch = (l.url || "").match(/offer\/(\d+)/);
+      const id = idMatch ? idMatch[1] : String(l.offerId ?? l.productId ?? "");
+      
       if (!/^\d{8,15}$/.test(id)) continue;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -464,52 +307,35 @@ export async function runImageSearchJob(
       totalExpected: offerIds.length,
     });
 
-    console.log(`[job ${jobId}] fetching Pizani + Parsebird (parallel)...`);
-
     const savedProducts: LiveProduct[] = [];
 
     const tasks = offerIds.map(async (offerId) => {
-      const tStart = Date.now();
       try {
-        const [detail, parsebirdData] = await Promise.all([
-          fetchPizani1688(offerId),
-          parsebirdByOfferId(offerId).catch((err) => {
-            console.warn(`[job ${jobId}] parsebird ${offerId} failed:`, err);
-            return null;
-          }),
-        ]);
+        // ✅ SPEED FIX: Only fetch Pizani (details). Skip Parsebird entirely.
+        const detail = await fetchPizani1688(offerId);
 
         if (detail) {
-          const live = mergeToLive(detail, parsebirdData);
-          
-          // ✅ THIS IS THE MAGIC. It pushes to the UI the millisecond it finishes.
+          // Pass null for Parsebird data
+          const live = mergeToLive(detail, null);
           pushProduct(jobId, live);
           savedProducts.push(live);
-
-          // ✅ AWAIT the save so it actually commits
           try {
             await saveLiveProduct(live);
-            console.log(`[job ${jobId}] ✓ saved ${live.id} to Firestore`);
           } catch (saveErr) {
-            console.warn(
-              `[job ${jobId}] ✗ save failed for ${live.id}:`,
-              saveErr
-            );
+            console.warn(`[job ${jobId}] save failed for ${live.id}:`, saveErr);
           }
-
-          console.log(
-            `[job ${jobId}] ✓ ${live.id} in ${Date.now() - tStart}ms`
-          );
           return;
         }
-        console.warn(`[job ${jobId}] ✗ pizani ${offerId} empty`);
       } catch (err: any) {
-        console.warn(`[job ${jobId}] ✗ ${offerId} failed: ${err.message}`);
+        console.warn(`[job ${jobId}] ${offerId} failed: ${err.message}`);
       }
 
-      const raw = listings.find(
-        (l) => String(l.offerId ?? l.productId) === offerId
-      );
+      const raw = listings.find((l) => {
+        const idMatch = (l.url || "").match(/offer\/(\d+)/);
+        const id = idMatch ? idMatch[1] : String(l.offerId ?? l.productId);
+        return id === offerId;
+      });
+
       if (raw) {
         const fallback = fallbackToLive(raw);
         if (fallback) {
@@ -518,35 +344,23 @@ export async function runImageSearchJob(
           try {
             await saveLiveProduct(fallback);
           } catch (saveErr) {
-            console.warn(
-              `[job ${jobId}] ✗ save failed for ${fallback.id}:`,
-              saveErr
-            );
+            console.warn(`[job ${jobId}] save failed for ${fallback.id}:`, saveErr);
           }
-          console.log(`[job ${jobId}] ✓ fallback ${fallback.id}`);
         }
       }
     });
 
     await Promise.all(tasks);
 
-    // ✅ AWAIT the cache write so it actually commits
     if (savedProducts.length > 0) {
       try {
-        await saveSearchCache(
-          imageHash,
-          savedProducts.map((p) => p.id)
-        );
-        console.log(
-          `[job ${jobId}] ✓ saved ${savedProducts.length} ids to search cache`
-        );
+        await saveSearchCache(imageHash, savedProducts.map((p) => p.id));
       } catch (cacheErr) {
-        console.warn(`[job ${jobId}] ✗ cache save failed:`, cacheErr);
+        console.warn(`[job ${jobId}] cache save failed:`, cacheErr);
       }
     }
 
     updateJob(jobId, { status: "done" });
-    console.log(`[job ${jobId}] DONE total=${Date.now() - t0}ms`);
   } catch (err: any) {
     console.error(`[job ${jobId}] pipeline failed:`, err);
     updateJob(jobId, {

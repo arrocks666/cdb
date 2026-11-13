@@ -12,8 +12,7 @@ import {
   getDocs,
   limit,
 } from "firebase/firestore";
-import { db, storage } from "@/lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"; // ✅ Firebase Storage
+import { db } from "@/lib/firebase"; // ✅ Removed storage
 import { formatBDT } from "@/lib/adminOrders";
 import ImageSearchModal from "@/components/ImageSearchModal";
 import { LiveProduct } from "@/lib/liveProduct";
@@ -225,6 +224,7 @@ export default function NewAdminOrderPage() {
     setDistrict("");
   };
 
+  // ✅ REVERTED TO IMGBB UPLOAD
   const handleUploadPhoto = async (
     idx: number,
     e: React.ChangeEvent<HTMLInputElement>
@@ -253,14 +253,18 @@ export default function NewAdminOrderPage() {
         finalFile = await resizeImage(file, 1600, 0.85); 
       }
 
-      // ✅ Upload directly to FIREBASE STORAGE
-      const filename = `admin_manual_orders/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-      const storageRef = ref(storage, filename);
+      const fd = new FormData();
+      fd.append("image", finalFile);
       
-      await uploadBytes(storageRef, finalFile);
-      const downloadURL = await getDownloadURL(storageRef);
+      // ✅ Call your original ImgBB API route
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
       
-      updateItem(idx, { image: downloadURL });
+      updateItem(idx, { image: data.url });
       
     } catch (err: any) {
       console.error("Upload failed:", err);
