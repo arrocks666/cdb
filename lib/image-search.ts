@@ -19,13 +19,15 @@ import {
   getSearchCache,
   loadCachedProducts,
 } from "./firestoreLiveProducts";
+import { db } from "./firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 
 if (!APIFY_TOKEN) throw new Error("Missing APIFY_TOKEN in .env.local");
 
 const PRODUCTS_WANTED = 3;
-const ASK_FOR = 3; // ✅ Keep this low for fast results
+const ASK_FOR = 3; 
 const MIN_PRICE_BDT = 20;
 
 type RawListing = {
@@ -55,7 +57,6 @@ function toRawBase64(input: string): string {
   return input;
 }
 
-// ✅ Stable hash — deterministic across runs of the same image
 function hashImageBase64(base64: string): string {
   let h = 5381;
   for (let i = 0; i < base64.length; i += 7) {
@@ -64,13 +65,30 @@ function hashImageBase64(base64: string): string {
   return `img_${h.toString(36)}_${base64.length}`;
 }
 
+// ✅ DEEP CLEAN: Recursively remove undefined values that break Firestore
+function deepClean(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map((v) => deepClean(v)).filter((v) => v !== undefined);
+  }
+  if (obj !== null && typeof obj === "object") {
+    const newObj: any = {};
+    for (const key in obj) {
+      const cleaned = deepClean(obj[key]);
+      if (cleaned !== undefined) {
+        newObj[key] = cleaned;
+      }
+    }
+    return newObj;
+  }
+  return obj;
+}
+
 async function findListingsByBase64(
   dataUrlOrBase64: string
 ): Promise<RawListing[]> {
   const rawBase64 = toRawBase64(dataUrlOrBase64);
   if (!rawBase64) throw new Error("Invalid image data");
 
-  // 1. Upload to ImgBB first
   let imageUrl = "";
   try {
     const imgbbForm = new FormData();
@@ -98,7 +116,6 @@ async function findListingsByBase64(
     maxResultsPerInput: ASK_FOR, 
   };
 
-  // ✅ Use the sync endpoint with the correct Actor ID (tilde ~)
   const ACTOR_ID = "blueskyscraper~1688-image-search-scraper"; 
   const runUrl = `https://api.apify.com/v2/actors/${ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}&waitForFinish=30`;
   
@@ -116,7 +133,6 @@ async function findListingsByBase64(
     throw new Error(`Image search actor failed (${response.status}): ${text}`);
   }
 
-  // The sync endpoint returns the dataset items directly
   const items = (await response.json()) as RawListing[];
   const ms = Date.now() - startedAt;
 
@@ -188,7 +204,7 @@ function cnyToSellingBdt(cny: number): number {
 
 export function mergeToLive(
   pizani: PizaniProduct,
-  parsebird: any | null // ✅ No longer used for variants
+  parsebird: any | null
 ): LiveProduct {
   const variants: LiveProductVariant[] = (pizani.variants ?? []).map((v) => ({
     colorId: v.colorId,
@@ -239,6 +255,26 @@ export function mergeToLiveForRefresh(
   parsebird: any | null
 ): LiveProduct {
   return mergeToLive(pizani, parsebird);
+}
+
+async function saveProductToStore(live: LiveProduct) {
+  try {
+    const ref = doc(db, "products", live.id);
+    const rawProductData = {
+      ...live,
+      id: live.id,
+      savedAt: serverTimestamp(),
+      isLive: true,
+    };
+    
+    // ✅ CLEAN THE DATA BEFORE SAVING
+    const productData = deepClean(rawProductData);
+    
+    await setDoc(ref, productData, { merge: true });
+    console.log(`[image-search] Saved to Main Store: ${live.id}`);
+  } catch (err) {
+    console.error(`[image-search] Failed to save to store ${live.id}:`, err);
+  }
 }
 
 export async function runImageSearchJob(
@@ -311,16 +347,14 @@ export async function runImageSearchJob(
 
     const tasks = offerIds.map(async (offerId) => {
       try {
-        // ✅ SPEED FIX: Only fetch Pizani (details). Skip Parsebird entirely.
         const detail = await fetchPizani1688(offerId);
 
         if (detail) {
-          // Pass null for Parsebird data
           const live = mergeToLive(detail, null);
-          pushProduct(jobId, live);
           savedProducts.push(live);
           try {
             await saveLiveProduct(live);
+            await saveProductToStore(live);
           } catch (saveErr) {
             console.warn(`[job ${jobId}] save failed for ${live.id}:`, saveErr);
           }
@@ -339,10 +373,10 @@ export async function runImageSearchJob(
       if (raw) {
         const fallback = fallbackToLive(raw);
         if (fallback) {
-          pushProduct(jobId, fallback);
           savedProducts.push(fallback);
           try {
             await saveLiveProduct(fallback);
+            await saveProductToStore(fallback);
           } catch (saveErr) {
             console.warn(`[job ${jobId}] save failed for ${fallback.id}:`, saveErr);
           }
@@ -351,6 +385,10 @@ export async function runImageSearchJob(
     });
 
     await Promise.all(tasks);
+
+    for (const p of savedProducts) {
+      pushProduct(jobId, p);
+    }
 
     if (savedProducts.length > 0) {
       try {

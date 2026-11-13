@@ -62,7 +62,7 @@ export default function LiveProductPage({
   const [selectedSize, setSelectedSize] = useState<string>("");
   const [activeImage, setActiveImage] = useState(0);
   const [userPickedImage, setUserPickedImage] = useState(false);
-  const [userPickedVariant, setUserPickedVariant] = useState(false); // ✅ NEW
+  const [userPickedVariant, setUserPickedVariant] = useState(false);
   const [showColorModal, setShowColorModal] = useState(false);
   const [colorSearch, setColorSearch] = useState("");
 
@@ -107,26 +107,15 @@ export default function LiveProductPage({
     if (sessionStorage.getItem(KEY)) return;
     sessionStorage.setItem(KEY, "1");
 
-    console.log(
-      `[live-product] ${p.id} ${
-        last === 0
-          ? "no timestamp (legacy)"
-          : `${Math.round(age / 86400000)}d old`
-      } — refreshing in background`
-    );
-
     fetch(`/api/live-product/refresh?id=${encodeURIComponent(p.id)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.product) {
           setProduct(data.product);
           liveStore.save(data.product);
-          console.log(`[live-product] ${p.id} ✓ refreshed`);
         }
       })
-      .catch((err) =>
-        console.warn(`[live-product] refresh failed:`, err)
-      );
+      .catch((err) => console.warn(`[live-product] refresh failed:`, err));
   }
 
   useEffect(() => {
@@ -219,9 +208,6 @@ export default function LiveProductPage({
   );
   const payOnDeliveryAmount = livePrice * quantity - payNowAmount;
 
-  // ✅ NEW — top price label
-  // If user picked a variant → show that variant's exact price
-  // Otherwise → show range (if variants differ) or base price
   const rangeExists =
     product.priceMax != null && product.priceMax > product.price;
 
@@ -506,8 +492,12 @@ export default function LiveProductPage({
                         type="button"
                         onClick={() => {
                           setSelectedColorId(c.id);
-                          setUserPickedImage(false);
-                          setUserPickedVariant(true);   // ✅ NEW
+                          setUserPickedVariant(true);
+                          
+                          // ✅ FIX: Update main image if color has an image
+                          if (c.image) {
+                            setUserPickedImage(false); 
+                          }
                         }}
                         title={c.label}
                         className={`group flex flex-col overflow-hidden rounded-lg border-2 bg-white text-left transition ${
@@ -893,8 +883,12 @@ export default function LiveProductPage({
                         onClick={() => {
                           setSelectedColorId(c.id);
                           setShowColorModal(false);
-                          setUserPickedImage(false);
-                          setUserPickedVariant(true);   // ✅ NEW
+                          setUserPickedVariant(true);
+                          
+                          // ✅ FIX: Update main image if color has an image
+                          if (c.image) {
+                            setUserPickedImage(false);
+                          }
                         }}
                         className={`flex flex-col items-center gap-1.5 overflow-hidden rounded-lg border-2 bg-white p-2 transition ${
                           active

@@ -1,38 +1,32 @@
 import { NextRequest } from "next/server";
-import { cookies } from "next/headers";
-import { verifySessionToken, ADMIN_COOKIE_NAME } from "@/lib/adminAuth";
-import { getJob } from "@/lib/firestoreBulkJobs";
+import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export const runtime = "nodejs";
 
-/**
- * GET /api/admin/bulk-import/status?jobId=xxx
- * Returns current job status.
- */
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get("jobId");
+
+  if (!jobId) {
+    return Response.json({ error: "Missing jobId" }, { status: 400 });
+  }
+
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifySessionToken(token)) {
-      return Response.json({ error: "Not authenticated" }, { status: 401 });
-    }
-
-    const jobId = request.nextUrl.searchParams.get("jobId") ?? "";
-    if (!jobId) {
-      return Response.json({ error: "jobId required" }, { status: 400 });
-    }
-
-    const job = await getJob(jobId);
-    if (!job) {
+    const snap = await getDoc(doc(db, "bulk_import_jobs", jobId));
+    if (!snap.exists()) {
       return Response.json({ error: "Job not found" }, { status: 404 });
     }
-
-    return Response.json(job);
+    
+    const data = snap.data();
+    
+    // ✅ Clean out serverTimestamp placeholders for JSON serialization
+    const cleanData = { ...data };
+    delete cleanData.createdAt;
+    delete cleanData.completedAt;
+    
+    return Response.json({ id: snap.id, ...cleanData });
   } catch (err: any) {
-    console.error("bulk-import/status error:", err);
-    return Response.json(
-      { error: err?.message ?? "Server error" },
-      { status: 500 }
-    );
+    return Response.json({ error: err.message }, { status: 500 });
   }
 }

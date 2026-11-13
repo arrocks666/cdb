@@ -3,15 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { categories } from "@/lib/categories";
+import { db } from "@/lib/firebase";
+// ✅ Import where for filtering
+import { collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
+import type { Product } from "@/lib/ProductsContext";
+import { formatBDT } from "@/lib/data";
 
-type JobStatus =
-  | "idle"
-  | "queued"
-  | "searching"
-  | "loading"
-  | "done"
-  | "error"
-  | "cancelled";
+type JobStatus = "idle" | "queued" | "searching" | "loading" | "done" | "error" | "cancelled";
 
 type JobState = {
   jobId: string | null;
@@ -22,20 +20,14 @@ type JobState = {
   error?: string;
 };
 
-// Cost: $0.01 per 1,000 parsebird results + $0.01 per Pizani product
-const PARSEBIRD_COST_PER_RESULT = 0.00001;
 const PIZANI_COST_PER_PRODUCT = 0.01;
-
-function estimateCost(count: number): number {
-  return count * PIZANI_COST_PER_PRODUCT + count * 1.5 * PARSEBIRD_COST_PER_RESULT;
-}
 
 export default function ImportProductsPage() {
   const router = useRouter();
 
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [subcategoryId, setSubcategoryId] = useState("");
-  const [count, setCount] = useState(30);
+  const [countInput, setCountInput] = useState("5"); 
 
   const [job, setJob] = useState<JobState>({
     jobId: null,
@@ -46,18 +38,48 @@ export default function ImportProductsPage() {
   });
 
   const [starting, setStarting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [recentImports, setRecentImports] = useState<Product[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
 
   const currentCategory = categories.find((c) => c.id === categoryId);
 
-  // Auto-select first subcategory when category changes
   useEffect(() => {
     const first = currentCategory?.subcategories[0]?.id ?? "";
     setSubcategoryId(first);
   }, [categoryId, currentCategory]);
 
-  // Cleanup on unmount
+  // ✅ FIX: Fetch only products from the last 24 hours
+  const fetchRecentImports = async () => {
+    setLoadingRecent(true);
+    try {
+      // Calculate timestamp for 24 hours ago
+      const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+
+      const q = query(
+        collection(db, "products"),
+        where("savedAt", ">=", twentyFourHoursAgo), // Only get recent ones
+        orderBy("savedAt", "desc"),
+        limit(20)
+      );
+
+      const snap = await getDocs(q);
+      const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Product));
+      
+      setRecentImports(items);
+    } catch (err) {
+      console.error("Failed to fetch recent imports:", err);
+    } finally {
+      setLoadingRecent(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentImports();
+  }, []);
+
   useEffect(() => {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
@@ -66,19 +88,15 @@ export default function ImportProductsPage() {
 
   const handleStart = async () => {
     if (!categoryId || !subcategoryId) return;
-    if (count < 1 || count > 500) {
+    
+    const count = Number(countInput);
+    if (!count || count < 1 || count > 500) {
       alert("Count must be between 1 and 500");
       return;
     }
 
     setStarting(true);
-    setJob({
-      jobId: null,
-      status: "queued",
-      imported: 0,
-      failed: 0,
-      totalExpected: 0,
-    });
+    setJob({ jobId: null, status: "queued", imported: 0, failed: 0, totalExpected: count });
 
     try {
       const res = await fetch("/api/admin/bulk-import/start", {
@@ -100,11 +118,7 @@ export default function ImportProductsPage() {
       startPolling(jobId);
     } catch (err: any) {
       console.error(err);
-      setJob((prev) => ({
-        ...prev,
-        status: "error",
-        error: err?.message ?? "Failed to start",
-      }));
+      setJob((prev) => ({ ...prev, status: "error", error: err?.message ?? "Failed to start" }));
       setStarting(false);
     }
   };
@@ -115,9 +129,7 @@ export default function ImportProductsPage() {
     const poll = async () => {
       if (stopped) return;
       try {
-        const statusRes = await fetch(
-          `/api/admin/bulk-import/status?jobId=${jobId}`
-        );
+        const statusRes = await fetch(`/api/admin/bulk-import/status?jobId=${jobId}`);
         if (!statusRes.ok) {
           pollRef.current = setTimeout(poll, 3000);
           return;
@@ -133,67 +145,13 @@ export default function ImportProductsPage() {
           error: statusData.error,
         });
 
-        // Done states → stop
-        if (
-          statusData.status === "done" ||
-          statusData.status === "error" ||
-          statusData.status === "cancelled"
-        ) {
+        if (statusData.status === "done" || statusData.status === "error" || statusData.status === "cancelled") {
           setStarting(false);
-          setCancelling(false);
+          fetchRecentImports(); // Refresh list when done
           return;
         }
 
-        // If searching → wait and re-check
-        if (statusData.status === "queued" || statusData.status === "searching") {
-          pollRef.current = setTimeout(poll, 3000);
-          return;
-        }
-
-        // If loading → trigger next batch
-        if (statusData.status === "loading") {
-          const runRes = await fetch("/api/admin/bulk-import/run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jobId }),
-          });
-
-          if (!runRes.ok) {
-            pollRef.current = setTimeout(poll, 3000);
-            return;
-          }
-
-          const runData = await runRes.json();
-
-          setJob((prev) => ({
-            ...prev,
-            imported: runData.imported ?? prev.imported,
-            failed: runData.failed ?? prev.failed,
-            totalExpected: runData.totalExpected ?? prev.totalExpected,
-          }));
-
-          if (runData.done) {
-            const finalRes = await fetch(
-              `/api/admin/bulk-import/status?jobId=${jobId}`
-            );
-            if (finalRes.ok) {
-              const finalData = await finalRes.json();
-              setJob({
-                jobId,
-                status: finalData.status,
-                imported: finalData.imported ?? 0,
-                failed: finalData.failed ?? 0,
-                totalExpected: finalData.totalExpected ?? 0,
-                error: finalData.error,
-              });
-            }
-            setStarting(false);
-            return;
-          }
-
-          pollRef.current = setTimeout(poll, 1500);
-          return;
-        }
+        pollRef.current = setTimeout(poll, 2000);
       } catch (err) {
         console.warn("Poll error:", err);
         pollRef.current = setTimeout(poll, 3000);
@@ -207,7 +165,6 @@ export default function ImportProductsPage() {
     if (!job.jobId) return;
     if (!confirm("Cancel this import? Already-imported products will be kept.")) return;
 
-    setCancelling(true);
     try {
       await fetch("/api/admin/bulk-import/cancel", {
         method: "POST",
@@ -221,28 +178,15 @@ export default function ImportProductsPage() {
 
   const handleReset = () => {
     if (pollRef.current) clearTimeout(pollRef.current);
-    setJob({
-      jobId: null,
-      status: "idle",
-      imported: 0,
-      failed: 0,
-      totalExpected: 0,
-    });
+    setJob({ jobId: null, status: "idle", imported: 0, failed: 0, totalExpected: 0 });
     setStarting(false);
-    setCancelling(false);
   };
 
-  const isRunning =
-    job.status === "queued" ||
-    job.status === "searching" ||
-    job.status === "loading";
-
-  const progressPct =
-    job.totalExpected > 0
-      ? Math.round(((job.imported + job.failed) / job.totalExpected) * 100)
-      : 0;
-
-  const estimatedCost = estimateCost(count);
+  const isRunning = job.status === "queued" || job.status === "searching" || job.status === "loading";
+  const progressPct = job.totalExpected > 0 ? Math.round(((job.imported + job.failed) / job.totalExpected) * 100) : 0;
+  
+  const countNum = Number(countInput) || 0;
+  const estimatedCost = countNum * PIZANI_COST_PER_PRODUCT;
 
   return (
     <div>
@@ -270,8 +214,9 @@ export default function ImportProductsPage() {
         </p>
       </div>
 
+      {/* Configuration Section */}
       {!isRunning && job.status === "idle" && (
-        <div className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark md:p-6">
+        <div className="mb-8 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark md:p-6">
           <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
             Configure Import
           </h2>
@@ -316,16 +261,16 @@ export default function ImportProductsPage() {
                 How many products to import
               </label>
               <input
-                type="number"
-                min={1}
-                max={500}
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value) || 30)}
+                type="text"
+                inputMode="numeric"
+                value={countInput}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setCountInput(val);
+                }}
+                placeholder="e.g. 5"
                 className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none md:max-w-xs"
               />
-              <p className="mt-1 text-[11px] text-text-muted">
-                Top-selling products will be selected automatically.
-              </p>
             </div>
 
             <div className="rounded-lg border-2 border-gold-primary/40 bg-bg-orange p-4">
@@ -337,15 +282,12 @@ export default function ImportProductsPage() {
                   ${estimatedCost.toFixed(2)}
                 </span>
               </div>
-              <p className="mt-1 text-[11px] text-text-muted">
-                {count} products × ~$0.01001 per product (Apify usage)
-              </p>
             </div>
 
             <div className="flex justify-end">
               <button
                 onClick={handleStart}
-                disabled={starting}
+                disabled={starting || !countInput}
                 className="rounded-lg bg-gold-primary px-6 py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-40"
               >
                 {starting ? "Starting..." : "Start Import"}
@@ -355,8 +297,9 @@ export default function ImportProductsPage() {
         </div>
       )}
 
+      {/* Progress Section */}
       {(isRunning || job.status === "done" || job.status === "error" || job.status === "cancelled") && (
-        <div className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark md:p-6">
+        <div className="mb-8 rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark md:p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="font-serif text-base font-bold text-text-primary md:text-lg">
@@ -368,10 +311,8 @@ export default function ImportProductsPage() {
                 {job.status === "cancelled" && "Import cancelled"}
               </h2>
               <p className="mt-0.5 text-xs text-text-muted">
-                {job.status === "loading" &&
-                  `${job.imported + job.failed} of ${job.totalExpected} processed`}
-                {job.status === "done" &&
-                  `${job.imported} imported, ${job.failed} failed`}
+                {job.status === "loading" && `${job.imported + job.failed} of ${job.totalExpected} processed`}
+                {job.status === "done" && `${job.imported} imported, ${job.failed} failed`}
               </p>
             </div>
             <div className="text-right">
@@ -389,23 +330,15 @@ export default function ImportProductsPage() {
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-border-subtle bg-bg-input p-3 text-center">
               <p className="text-2xl font-bold text-success">{job.imported}</p>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Imported
-              </p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">Imported</p>
             </div>
             <div className="rounded-lg border border-border-subtle bg-bg-input p-3 text-center">
               <p className="text-2xl font-bold text-red-primary">{job.failed}</p>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Failed
-              </p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">Failed</p>
             </div>
             <div className="rounded-lg border border-border-subtle bg-bg-input p-3 text-center">
-              <p className="text-2xl font-bold text-text-primary">
-                {job.totalExpected}
-              </p>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                Total
-              </p>
+              <p className="text-2xl font-bold text-text-primary">{job.totalExpected}</p>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">Total</p>
             </div>
           </div>
 
@@ -415,34 +348,24 @@ export default function ImportProductsPage() {
             </div>
           )}
 
-          {/* ✅ Cancel button — shows as soon as import starts */}
           {isRunning && (
             <div className="mt-5 flex items-center justify-between">
-              <p className="text-[11px] text-text-muted">
-                Please keep this tab open. You can cancel anytime.
-              </p>
+              <p className="text-[11px] text-text-muted">Please keep this tab open. You can cancel anytime.</p>
               <button
                 onClick={handleCancel}
-                disabled={cancelling}
                 className="rounded-lg border-2 border-red-primary bg-white px-4 py-2 text-sm font-semibold text-red-primary transition hover:bg-red-primary hover:text-white disabled:opacity-40"
               >
-                {cancelling ? "Cancelling..." : "Cancel Import"}
+                Cancel Import
               </button>
             </div>
           )}
 
           {job.status === "done" && (
             <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={handleReset}
-                className="rounded-lg border border-border-subtle bg-white px-4 py-2.5 text-sm font-semibold text-text-secondary transition hover:border-gold-primary hover:text-gold-primary"
-              >
+              <button onClick={handleReset} className="rounded-lg border border-border-subtle bg-white px-4 py-2.5 text-sm font-semibold text-text-secondary transition hover:border-gold-primary hover:text-gold-primary">
                 Import More
               </button>
-              <button
-                onClick={() => router.push("/admin-panel/products")}
-                className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury"
-              >
+              <button onClick={() => router.push("/admin-panel/products")} className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury">
                 View Products
               </button>
             </div>
@@ -450,16 +373,79 @@ export default function ImportProductsPage() {
 
           {(job.status === "error" || job.status === "cancelled") && (
             <div className="mt-5 flex justify-end">
-              <button
-                onClick={handleReset}
-                className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury"
-              >
+              <button onClick={handleReset} className="rounded-lg bg-gold-primary px-5 py-2.5 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury">
                 Try Again
               </button>
             </div>
           )}
         </div>
       )}
+
+      {/* Recently Imported Section */}
+      <div className="rounded-lg border border-border-subtle bg-white p-5 shadow-card-dark md:p-6">
+        <h2 className="mb-4 font-serif text-base font-bold text-text-primary md:text-lg">
+          Recently Imported (Last 24 Hours)
+        </h2>
+        
+        {loadingRecent ? (
+          <div className="flex justify-center py-4">
+             <div className="h-6 w-6 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+          </div>
+        ) : recentImports.length === 0 ? (
+          <p className="text-sm text-text-muted">No products imported in the last 24 hours.</p>
+        ) : (
+          <div className="space-y-2">
+            {recentImports.map((p) => (
+              <div key={p.id} className="rounded-lg border border-border-subtle bg-bg-input">
+                <button
+                  onClick={() => setExpandedProduct(expandedProduct === p.id ? null : p.id)}
+                  className="flex w-full items-center justify-between p-3 text-left transition hover:bg-bg-orange"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-white">
+                      {p.image ? (
+                        <img src={p.image} alt="" className="h-full w-full object-contain" />
+                      ) : (
+                        <span className="text-xs">📦</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="line-clamp-1 text-sm font-semibold text-text-primary">{p.title}</p>
+                      <p className="text-xs text-text-muted">
+                        {formatBDT(p.price)} • {p.colors?.length || 0} colors • {p.sizes?.length || 0} sizes
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-gold-primary">
+                    {expandedProduct === p.id ? "Hide" : "Show"}
+                  </span>
+                </button>
+                
+                {expandedProduct === p.id && (
+                  <div className="border-t border-border-subtle p-3 bg-white">
+                    <p className="text-xs text-text-secondary mb-2"><strong>ID:</strong> {p.id}</p>
+                    <p className="text-xs text-text-secondary mb-2"><strong>Supplier:</strong> {p.supplierName}</p>
+                    <p className="text-xs text-text-secondary mb-2"><strong>Category:</strong> {p.categoryId} / {p.subcategoryId}</p>
+                    
+                    {p.colors && p.colors.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-[10px] font-bold uppercase text-text-muted">Colors:</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {p.colors.map((c: any) => (
+                            <span key={c.id} className="text-[10px] border border-border-subtle px-1.5 py-0.5 rounded bg-bg-input">
+                              {c.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
