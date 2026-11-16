@@ -11,7 +11,7 @@ if (getApps().length === 0) {
   const base64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
   
   if (!base64) {
-    console.error("Missing FIREBASE_SERVICE_ACCOUNT_BASE64 in environment variables.");
+    console.error("Missing FIREBASE_SERVICE_ACCOUNT_BASE64 in Netlify.");
   } else {
     try {
       const json = Buffer.from(base64, "base64").toString("utf-8");
@@ -37,11 +37,18 @@ export async function POST(request: NextRequest) {
     };
 
     if (!newPassword || newPassword.length < 6) {
-      return Response.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+      return Response.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
     }
 
+    // Check if Firebase initialized correctly. If not, return clear error instead of crashing.
     if (getApps().length === 0) {
-      return Response.json({ error: "Firebase Admin is not configured on the server." }, { status: 500 });
+      return Response.json(
+        { error: "Server configuration error: Missing Admin Keys." },
+        { status: 500 }
+      );
     }
 
     const auth = getAuth();
@@ -90,8 +97,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- FINAL CHECK ---
     if (!user) {
-      return Response.json({ error: "User account not found in Auth." }, { status: 404 });
+      return Response.json(
+        { error: "User account not found in Auth." },
+        { status: 404 }
+      );
     }
 
     // --- SUCCESS: Update the password ---
@@ -104,6 +115,10 @@ export async function POST(request: NextRequest) {
 
   } catch (err: any) {
     console.error("[set-user-password] error:", err);
-    return Response.json({ error: err?.message ?? "Server error" }, { status: 500 });
+    // Always return JSON so the frontend doesn't crash
+    return Response.json(
+      { error: err?.message ?? "Server error" },
+      { status: 500 }
+    );
   }
 }

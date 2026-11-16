@@ -92,11 +92,16 @@ export default function AdminDashboardPage() {
             <p className="text-[10px] uppercase tracking-wider text-text-muted">
               Today
             </p>
-            <p className="text-sm font-semibold text-text-primary">
+            {/* ✅ FIX: Added suppressHydrationWarning and forced UTC timezone */}
+            <p 
+              className="text-sm font-semibold text-text-primary"
+              suppressHydrationWarning
+            >
               {today.toLocaleDateString("en-GB", {
                 day: "2-digit",
                 month: "short",
                 year: "numeric",
+                timeZone: "UTC", // ✅ Prevents server/client mismatch
               })}
             </p>
           </div>
