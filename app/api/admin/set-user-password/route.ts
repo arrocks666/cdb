@@ -6,29 +6,43 @@ import { getApps, initializeApp, cert } from "firebase-admin/app";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// ✅ Initialize Firebase Admin using the Base64 encoded key
-if (getApps().length === 0) {
-  const base64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-  
-  if (!base64) {
-    console.error("Missing FIREBASE_SERVICE_ACCOUNT_BASE64 in Netlify.");
-  } else {
-    try {
-      const json = Buffer.from(base64, "base64").toString("utf-8");
-      const serviceAccount = JSON.parse(json);
-      
-      initializeApp({
-        credential: cert(serviceAccount),
-      });
-      console.log("Firebase Admin initialized successfully via Base64.");
-    } catch (err) {
-      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_BASE64:", err);
-    }
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
+    // ✅ MOVE INITIALIZATION INSIDE THE TRY BLOCK
+    if (getApps().length === 0) {
+      const base64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+      
+      if (!base64) {
+        console.error("Missing FIREBASE_SERVICE_ACCOUNT_BASE64 in Netlify.");
+        return Response.json(
+          { error: "Server configuration error: Missing Admin Keys." }, 
+          { status: 500 }
+        );
+      }
+
+      try {
+        const json = Buffer.from(base64, "base64").toString("utf-8");
+        const serviceAccount = JSON.parse(json);
+        
+        // ✅ CRITICAL FIX: Force the private key to have real newlines
+        // Netlify sometimes strips these, causing an Invalid PEM error
+        if (serviceAccount.private_key) {
+          serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+        }
+
+        initializeApp({
+          credential: cert(serviceAccount),
+        });
+        console.log("Firebase Admin initialized successfully.");
+      } catch (initErr: any) {
+        console.error("Firebase Admin Init Error:", initErr);
+        return Response.json(
+          { error: `Failed to initialize Firebase Admin: ${initErr.message}` }, 
+          { status: 500 }
+        );
+      }
+    }
+
     const body = await request.json();
     const { phone, email: realEmail, newPassword } = body as {
       phone?: string;
@@ -40,14 +54,6 @@ export async function POST(request: NextRequest) {
       return Response.json(
         { error: "Password must be at least 6 characters" },
         { status: 400 }
-      );
-    }
-
-    // Check if Firebase initialized correctly. If not, return clear error instead of crashing.
-    if (getApps().length === 0) {
-      return Response.json(
-        { error: "Server configuration error: Missing Admin Keys." },
-        { status: 500 }
       );
     }
 
