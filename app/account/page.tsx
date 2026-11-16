@@ -9,7 +9,6 @@ import {
   getSavedPayments,
   savePayments,
   SavedPayments,
-  getSavedAddress,
   saveAddress,
   SavedAddress,
 } from "@/lib/userProfile";
@@ -20,6 +19,9 @@ import {
 } from "@/lib/coupons";
 import { getUserOrders } from "@/lib/firestoreOrders";
 import type { Order } from "@/lib/OrderContext";
+import { db } from "@/lib/firebase";
+// ✅ FIX: Added setDoc to the import
+import { doc, getDoc, setDoc } from "firebase/firestore"; 
 
 type MenuItem = { icon: string; title: string; href?: string };
 
@@ -54,29 +56,58 @@ export default function AccountPage() {
   const [dueOrders, setDueOrders] = useState<Order[]>([]);
   const [totalDue, setTotalDue] = useState(0);
 
+  // ✅ Fetch data directly from the 'users' collection
   useEffect(() => {
     if (!user) return;
-    getSavedPayments(user.uid).then(setPayments);
-    getSavedAddress(user.uid).then(setAddress);
 
-    (async () => {
-      const all = await getUserCoupons(user.uid);
-      const valid = filterValidCoupons(all);
-      setCouponsList(valid);
-      setCouponCount(valid.length);
-    })();
+    const fetchData = async () => {
+      // 1. Fetch from users collection
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const snap = await getDoc(userRef);
+        
+        if (snap.exists()) {
+          const data = snap.data();
+          const saved = data.savedAddress || {};
+          
+          setAddress({
+            name: data.name || saved.name || "",
+            phone: data.phone || saved.phone || "",
+            email: data.email || saved.email || "",
+            address: saved.address || "",
+            district: saved.district || "",
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load user address:", err);
+      }
 
-    (async () => {
-      const orders = await getUserOrders(user.uid);
-      const pending = orders.filter((o) => {
-        const paid = o.paidAmount ?? 0;
-        return paid < o.total;
-      });
-      setDueOrders(pending);
-      setTotalDue(
-        pending.reduce((sum, o) => sum + (o.total - (o.paidAmount ?? 0)), 0)
-      );
-    })();
+      // 2. Fetch payments
+      getSavedPayments(user.uid).then(setPayments);
+
+      // 3. Fetch coupons
+      (async () => {
+        const all = await getUserCoupons(user.uid);
+        const valid = filterValidCoupons(all);
+        setCouponsList(valid);
+        setCouponCount(valid.length);
+      })();
+
+      // 4. Fetch pending orders
+      (async () => {
+        const orders = await getUserOrders(user.uid);
+        const pending = orders.filter((o) => {
+          const paid = o.paidAmount ?? 0;
+          return paid < o.total;
+        });
+        setDueOrders(pending);
+        setTotalDue(
+          pending.reduce((sum, o) => sum + (o.total - (o.paidAmount ?? 0)), 0)
+        );
+      })();
+    };
+
+    fetchData();
   }, [user]);
 
   const handleLogout = async () => {
@@ -108,6 +139,16 @@ export default function AccountPage() {
     setSaveAddressMsg(null);
     try {
       await saveAddress(user.uid, address);
+      
+      // ✅ Also update the main user doc's name/email if they changed
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        name: address.name,
+        email: address.email,
+        phone: address.phone,
+        savedAddress: address,
+      }, { merge: true });
+
       setSaveAddressMsg("Saved");
       setEditingAddress(false);
       setTimeout(() => setSaveAddressMsg(null), 2000);
@@ -166,7 +207,7 @@ export default function AccountPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <h2 className="truncate text-base font-bold text-text-primary md:text-xl">
-                  {phone}
+                  {address.name || phone}
                 </h2>
                 {emailToShow && (
                   <p className="mt-0.5 truncate text-[11px] text-text-muted md:text-sm">
@@ -182,7 +223,7 @@ export default function AccountPage() {
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2 md:gap-3">
-            <StatBox label="Orders" value="0" />
+            <StatBox label="Orders" value={String(dueOrders.length)} />
             <StatBox label="Wishlist" value="0" />
             <StatBox label="Coupons" value={String(couponCount)} />
           </div>
@@ -348,7 +389,6 @@ export default function AccountPage() {
                           editing={editingAddress}
                           placeholder="e.g. Dhaka"
                         />
-                        {/* ✅ NEW: Email Field */}
                         <InputField
                           label="Email Address (For Order Updates)"
                           value={address.email ?? ""}

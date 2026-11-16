@@ -1,252 +1,235 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from "firebase/auth";
+import Link from "next/link";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-function phoneToFakeEmail(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `${digits}@chinadailybazar.app`;
-}
-
-function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
 export default function SignupPage() {
   const router = useRouter();
-
-  const [step, setStep] = useState<1 | 2>(1);
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [userCode, setUserCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleRequestCode = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  // ✅ NEW: Added Name, Email, and Address to the state
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    district: "",
+    password: "",
+    confirmPassword: "",
+  });
 
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 10) {
-      setError("Please enter a valid phone number (10+ digits)");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
-    const newCode = generateCode();
-    setCode(newCode);
-    setUserCode("");
-    setStep(2);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleVerifyAndCreate = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (userCode !== code) {
-      setError("Incorrect code. Please check and try again.");
-      return;
-    }
+    // ✅ MANDATORY VALIDATION
+    if (!formData.name.trim()) return setError("Full Name is required");
+    if (!formData.phone.trim()) return setError("Phone Number is required");
+    if (!formData.email.trim()) return setError("Email Address is required");
+    if (!formData.address.trim()) return setError("Address is required");
+    
+    if (formData.password.length < 6) return setError("Password must be at least 6 characters");
+    if (formData.password !== formData.confirmPassword) return setError("Passwords do not match");
 
     setLoading(true);
 
-    let createdUid: string | null = null;
-
     try {
-      // Step 1: Create Firebase Auth account
-      const fakeEmail = phoneToFakeEmail(phone);
-      console.log("[SIGNUP] Creating auth account for:", fakeEmail);
-      const cred = await createUserWithEmailAndPassword(auth, fakeEmail, password);
-      createdUid = cred.user.uid;
-      console.log("[SIGNUP] Auth account created, uid:", createdUid);
+      // 1. Normalize phone for the Firebase Auth email
+      const digits = formData.phone.replace(/\D/g, "");
+      let normalized = digits;
+      if (digits.startsWith("880") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
+      } else if (digits.startsWith("88") && digits.length === 13) {
+        normalized = "0" + digits.slice(3);
+      }
+      const generatedEmail = `${normalized}@chinadailybazar.app`;
 
-      // Step 2: Update display name
-      await updateProfile(cred.user, { displayName: phone });
-      console.log("[SIGNUP] Display name set");
+      // 2. Create the user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        generatedEmail,
+        formData.password
+      );
+      const user = userCredential.user;
 
-      // Step 3: Write to Firestore
-      console.log("[SIGNUP] Writing user doc to Firestore...");
-      await setDoc(doc(db, "users", cred.user.uid), {
-        uid: cred.user.uid,
-        phone,
-        email: email.trim() || "",
-        role: "customer",
-        createdAt: serverTimestamp(),
+      // 3. Save all details to Firestore 'users' collection
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        name: formData.name.trim(),
+        phone: normalized,
+        email: formData.email.trim(),
+        savedAddress: {
+          name: formData.name.trim(),
+          phone: normalized,
+          email: formData.email.trim(),
+          address: formData.address.trim(),
+          district: formData.district.trim(),
+        },
+        createdAt: Date.now(),
+        createdAtServer: serverTimestamp(),
       });
-      console.log("[SIGNUP] Firestore user doc written successfully");
 
       router.push("/account");
     } catch (err: any) {
-      console.error("[SIGNUP] ERROR:", err);
-      console.error("[SIGNUP] Error code:", err.code);
-      console.error("[SIGNUP] Error message:", err.message);
-
+      console.error(err);
       if (err.code === "auth/email-already-in-use") {
-        setError(
-          "This phone number is already registered. Please login instead."
-        );
-      } else if (err.code === "auth/weak-password") {
-        setError("Password is too weak. Use at least 6 characters.");
-      } else if (err.code === "permission-denied") {
-        setError(
-          "Auth succeeded but Firestore write failed. Rules may not have propagated yet. Wait 1 minute and try again."
-        );
-      } else if (err.message) {
-        setError(`${err.code || "Error"}: ${err.message}`);
+        setError("This phone number is already registered.");
       } else {
-        setError("Failed to create account. Check console for details.");
+        setError(err.message || "Failed to create account.");
       }
-
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-bg-secondary">
-      <div className="sticky top-[56px] z-40 border-b border-border-subtle bg-white shadow-sm md:top-[60px]">
-        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-3">
-          <button onClick={() => router.push("/")} aria-label="Back" className="flex h-8 w-8 items-center justify-center text-text-primary transition hover:text-gold-primary">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-          </button>
-          <h1 className="text-lg font-bold text-text-primary md:text-xl">Create Account</h1>
+    <div className="flex min-h-screen items-center justify-center bg-bg-secondary px-4 py-12">
+      <div className="w-full max-w-md space-y-6 rounded-lg border border-border-subtle bg-white p-6 shadow-card-dark md:p-8">
+        <div className="text-center">
+          <h1 className="font-serif text-2xl font-bold text-text-primary">
+            Create an Account
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Join ChinaDailyBazar today
+          </p>
         </div>
-      </div>
 
-      <div className="mx-auto max-w-md px-3 py-6 md:px-4 md:py-10">
-        {step === 1 && (
-          <form onSubmit={handleRequestCode} className="space-y-4">
-            <div className="text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-bg-orange text-3xl">📱</div>
-              <h2 className="mt-4 text-xl font-bold text-text-primary md:text-2xl">Create your account</h2>
-              <p className="mt-1 text-xs text-text-muted md:text-sm">Use your phone number to sign up</p>
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-              <Field label="Phone Number *" value={phone} onChange={setPhone} placeholder="+880 1XXX XXXXXX" type="tel" />
-              <Field label="Password *" value={password} onChange={setPassword} placeholder="At least 6 characters" type="password" />
-              <Field label="Email (optional)" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
-            </div>
-
-            {error && (
-              <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary md:text-sm">
-                {error}
-              </div>
-            )}
-
-            <button type="submit" className="w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury">
-              Continue
-            </button>
-
-            <p className="text-center text-xs text-text-muted md:text-sm">
-              Already have an account?{" "}
-              <Link href="/login" className="font-semibold text-gold-primary underline">
-                Login
-              </Link>
-            </p>
-          </form>
+        {error && (
+          <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-center text-sm text-red-primary">
+            {error}
+          </div>
         )}
 
-        {step === 2 && (
-          <form onSubmit={handleVerifyAndCreate} className="space-y-4">
-            <div className="text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-bg-orange text-3xl">✅</div>
-              <h2 className="mt-4 text-xl font-bold text-text-primary md:text-2xl">Verify your number</h2>
-              <p className="mt-1 text-xs text-text-muted md:text-sm">Type the code shown below to confirm</p>
-            </div>
+        <form onSubmit={handleSignup} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Full Name *
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="John Doe"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
 
-            <div className="rounded-lg border-2 border-dashed border-gold-primary bg-bg-orange p-6 text-center shadow-card-dark">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Your verification code</p>
-              <p className="mt-2 font-mono text-4xl font-bold tracking-[0.3em] text-gold-primary">
-                {code}
-              </p>
-            </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Phone Number *
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="01XXXXXXXXX"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
 
-            <div className="rounded-lg border border-border-subtle bg-white p-4 shadow-card-dark md:p-5">
-              <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-                Enter the code above *
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={userCode}
-                onChange={(e) => setUserCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder=""
-                autoComplete="off"
-                className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
-              />
-            </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Email Address *
+            </label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="you@example.com"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-primary/30 bg-red-primary/5 px-3 py-2 text-xs text-red-primary md:text-sm">
-                {error}
-              </div>
-            )}
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Full Address *
+            </label>
+            <textarea
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+              placeholder="House, Road, Area"
+              rows={2}
+              required
+              className="w-full resize-none rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
 
-            <button
-              type="submit"
-              disabled={loading || userCode.length !== 6}
-              className="w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {loading ? "Creating account..." : "Verify & Create Account"}
-            </button>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              District
+            </label>
+            <input
+              type="text"
+              name="district"
+              value={formData.district}
+              onChange={handleChange}
+              placeholder="e.g. Dhaka"
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setStep(1);
-                setUserCode("");
-                setCode("");
-                setError(null);
-              }}
-              className="w-full py-2 text-xs font-medium text-text-muted transition hover:text-text-primary md:text-sm"
-            >
-              ← Back
-            </button>
-          </form>
-        )}
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Password *
+            </label>
+            <input
+              type="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Min 6 characters"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
+              Confirm Password *
+            </label>
+            <input
+              type="password"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="Re-enter password"
+              required
+              className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-gold-primary focus:outline-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-gold-primary py-3 text-sm font-semibold text-white shadow-orange-glow transition hover:bg-gold-luxury disabled:opacity-50"
+          >
+            {loading ? "Creating Account..." : "Sign Up"}
+          </button>
+        </form>
+
+        <p className="text-center text-sm text-text-secondary">
+          Already have an account?{" "}
+          <Link href="/login" className="font-semibold text-gold-primary hover:underline">
+            Login
+          </Link>
+        </p>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-[11px] font-medium text-text-secondary md:text-xs">
-        {label}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-gold-primary focus:outline-none"
-      />
     </div>
   );
 }

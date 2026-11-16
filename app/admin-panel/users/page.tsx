@@ -10,14 +10,6 @@ import {
 } from "@/lib/coupons";
 import { formatBDT } from "@/lib/adminOrders";
 import UserOrdersModal from "@/components/UserOrdersModal";
-import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
-
-type PasswordRequest = {
-  id: string;
-  phone: string;
-  createdAt: any;
-};
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -28,27 +20,14 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  
-  // ✅ State for password requests
-  const [passRequests, setPassRequests] = useState<PasswordRequest[]>([]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
       const list = await getAllUsers();
       setUsers(list);
-      
-      // ✅ Load pending password requests
-      const q = query(collection(db, "password_requests"), where("status", "==", "pending"));
-      const snap = await getDocs(q);
-      const requests: PasswordRequest[] = [];
-      snap.forEach((doc) => {
-        requests.push({ id: doc.id, ...doc.data() } as PasswordRequest);
-      });
-      setPassRequests(requests);
-      
     } catch (err) {
-      console.error("Failed to load users or requests", err);
+      console.error("Failed to load users", err);
     } finally {
       setLoading(false);
     }
@@ -80,21 +59,6 @@ export default function AdminUsersPage() {
       showToast("Failed to give coupon");
     } finally {
       setSaving(false);
-    }
-  };
-
-  // ✅ Mark a request as resolved
-  const handleResolveRequest = async (reqId: string) => {
-    try {
-      await updateDoc(doc(db, "password_requests", reqId), {
-        status: "resolved",
-        resolvedAt: new Date(),
-      });
-      showToast("Request marked as resolved");
-      await loadUsers(); // Reload list
-    } catch (err) {
-      console.error(err);
-      showToast("Failed to resolve request");
     }
   };
 
@@ -134,31 +98,6 @@ export default function AdminUsersPage() {
           Click a user to view their orders and outstanding dues.
         </p>
       </div>
-
-      {/* ✅ NEW: Password Requests Section */}
-      {passRequests.length > 0 && (
-        <div className="mb-6 rounded-lg border border-red-primary bg-red-primary/5 p-4">
-          <h2 className="mb-2 text-sm font-bold text-red-primary">🔔 Password Reset Requests</h2>
-          <div className="space-y-2">
-            {passRequests.map((req) => (
-              <div key={req.id} className="flex items-center justify-between rounded-lg bg-white p-3 shadow-sm">
-                <div>
-                  <p className="font-semibold text-text-primary">{req.phone}</p>
-                  <p className="text-xs text-text-muted">
-                    Requested at: {req.createdAt ? new Date(req.createdAt.seconds * 1000).toLocaleString() : "Just now"}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleResolveRequest(req.id)}
-                  className="rounded bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700"
-                >
-                  Mark Resolved
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="mb-4">
         <input

@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 
 export default function LoginPage() {
@@ -17,16 +16,21 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // ✅ State for manual password reset request
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetPhone, setResetPhone] = useState("");
-  const [resetSuccess, setResetSuccess] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
 
+  // ✅ FIX: Move the redirect logic into a useEffect to prevent React warnings
+  useEffect(() => {
+    if (user) {
+      router.push("/account");
+    }
+  }, [user, router]);
+
+  // ✅ FIX: Show a loading screen while redirecting instead of returning null
   if (user) {
-    router.push("/account");
-    return null;
+    return (
+      <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-primary border-t-transparent" />
+      </div>
+    );
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -45,34 +49,20 @@ export default function LoginPage() {
       const email = `${normalized}@chinadailybazar.app`;
 
       await signInWithEmailAndPassword(auth, email, password);
-      router.push("/account");
+      // The useEffect above will handle the redirect
     } catch (err: any) {
-      setError("Invalid phone number or password.");
+      console.error(err);
+      if (
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/invalid-credential"
+      ) {
+        setError("Invalid phone number or password.");
+      } else {
+        setError(err.message || "Failed to login.");
+      }
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ✅ Handle manual reset request
-  const handleResetRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setResetLoading(true);
-    try {
-      await addDoc(collection(db, "password_requests"), {
-        phone: resetPhone,
-        createdAt: serverTimestamp(),
-        status: "pending",
-      });
-      setResetSuccess(true);
-      setTimeout(() => {
-        setResetOpen(false);
-        setResetSuccess(false);
-        setResetPhone("");
-      }, 3000);
-    } catch (err) {
-      alert("Failed to send request.");
-    } finally {
-      setResetLoading(false);
     }
   };
 
@@ -114,13 +104,12 @@ export default function LoginPage() {
               <label className="block text-[11px] font-medium text-text-secondary md:text-xs">
                 Password
               </label>
-              <button
-                type="button"
-                onClick={() => setResetOpen(true)}
+              <Link
+                href="/forgot-password"
                 className="text-[11px] font-semibold text-gold-primary hover:underline md:text-xs"
               >
                 Forgot Password?
-              </button>
+              </Link>
             </div>
             <div className="relative">
               <input
@@ -167,50 +156,6 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
-
-      {/* ✅ Manual Reset Modal */}
-      {resetOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
-            <h3 className="mb-2 text-lg font-bold text-text-primary">Reset Password</h3>
-            {resetSuccess ? (
-              <p className="text-sm text-success">
-                ✅ Request sent! Please contact the admin on WhatsApp to get your new password.
-              </p>
-            ) : (
-              <form onSubmit={handleResetRequest} className="space-y-4">
-                <p className="text-sm text-text-secondary">
-                  Enter your registered phone number below. The admin will see your request and provide you with a new password.
-                </p>
-                <input
-                  type="text"
-                  placeholder="01XXXXXXXXX"
-                  value={resetPhone}
-                  onChange={(e) => setResetPhone(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-border-subtle bg-bg-input px-3 py-2.5 text-sm focus:border-gold-primary focus:outline-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setResetOpen(false)}
-                    className="flex-1 rounded-lg border border-border-subtle py-2 text-sm font-semibold text-text-secondary"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={resetLoading}
-                    className="flex-1 rounded-lg bg-gold-primary py-2 text-sm font-semibold text-white"
-                  >
-                    {resetLoading ? "Sending..." : "Send Request"}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
