@@ -102,15 +102,25 @@ export default function ForgotPasswordPage() {
 
     setLoading(true);
     try {
-      // ✅ This uses the Admin API route to update the password
       const res = await fetch("/api/admin/set-user-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, email: registeredEmail, newPassword }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to reset password.");
+      // ✅ SAFELY read the text first to catch HTML error pages
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        // If it's not JSON, it's likely an HTML error page from Netlify. Show a snippet.
+        throw new Error(`Server Error: ${text.substring(0, 50).replace(/<[^>]*>?/gm, '')}...`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reset password.");
+      }
 
       alert("Password reset successfully! Please login.");
       router.push("/login");
